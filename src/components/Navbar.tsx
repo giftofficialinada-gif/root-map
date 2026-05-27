@@ -1,11 +1,12 @@
+import { Map, Package, ArrowUpDown, BookOpen, LogOut, type LucideIcon } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { TabType } from '../types';
 
-const tabs: { id: TabType; label: string; icon: string }[] = [
-  { id: 'map',      label: '地図',  icon: '🗺' },
-  { id: 'packages', label: '荷物',  icon: '📦' },
-  { id: 'route',    label: 'ルート', icon: '↕' },
-  { id: 'history',  label: '記録',  icon: '冊' },
+const tabs: { id: TabType; label: string; Icon: LucideIcon }[] = [
+  { id: 'map',      label: '地図',   Icon: Map },
+  { id: 'packages', label: '荷物',   Icon: Package },
+  { id: 'route',    label: 'ルート', Icon: ArrowUpDown },
+  { id: 'history',  label: '記録',   Icon: BookOpen },
 ];
 
 export default function Navbar() {
@@ -29,7 +30,7 @@ export default function Navbar() {
             }}
             className="flex-1 flex flex-col items-center pt-2 pb-3 gap-0.5 transition-colors"
           >
-            <span className="text-lg leading-none">{tab.icon}</span>
+            <tab.Icon size={20} strokeWidth={active ? 2 : 1.5} />
             <span className="text-xs font-medium">{tab.label}</span>
           </button>
         );
@@ -39,7 +40,7 @@ export default function Navbar() {
         style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', background: 'transparent', borderTop: '2px solid transparent' }}
         className="flex flex-col items-center pt-2 pb-3 gap-0.5 px-3 hover:opacity-70 transition-opacity"
       >
-        <span className="text-lg leading-none">👤</span>
+        <LogOut size={20} strokeWidth={1.5} />
         <span className="text-xs">退出</span>
       </button>
     </div>

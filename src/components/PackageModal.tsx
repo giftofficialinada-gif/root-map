@@ -4,6 +4,7 @@ import { Package, PACKAGE_SIZES, CoolType, PackageSize, COOL_LABELS } from '../t
 interface Props {
   pkg?: Package;
   defaultDate: string;
+  scannedCode?: string;
   onSave: (data: Omit<Package, 'id' | 'routeOrder'>) => void;
   onClose: () => void;
 }
@@ -28,7 +29,7 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lng: numb
   return null;
 }
 
-export default function PackageModal({ pkg, defaultDate, onSave, onClose }: Props) {
+export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, onClose }: Props) {
   const [customerName, setCustomerName] = useState(pkg?.customerName ?? '');
   const [address, setAddress] = useState(pkg?.address ?? '');
   const [size, setSize] = useState<PackageSize>(pkg?.size ?? 60);
@@ -165,6 +166,15 @@ export default function PackageModal({ pkg, defaultDate, onSave, onClose }: Prop
               placeholder="例：玄関前に置く" className={inp} />
           </Field>
 
+          {scannedCode && (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--washi)', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 14 }}>▦</span>
+              <div>
+                <p style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 2 }}>スキャン結果</p>
+                <p style={{ fontFamily: 'var(--font-mono)', color: 'var(--ink)', fontSize: 13 }}>{scannedCode}</p>
+              </div>
+            </div>
+          )}
           {error && <p style={{ color: 'var(--accent)', fontSize: 13, textAlign: 'center' }}>{error}</p>}
 
           <button type="submit"

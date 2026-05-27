@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { Package, COOL_LABELS } from '../types';
 import PackageModal from './PackageModal';
+import BarcodeScanner from './BarcodeScanner';
 
 export default function PackageList() {
   const { selectedDate, setSelectedDate, getByDate, addPackage, updatePackage, deletePackage, setDelivered } = useAppStore();
@@ -9,6 +10,8 @@ export default function PackageList() {
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<Package | undefined>();
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannedCode, setScannedCode] = useState<string | undefined>();
 
   const stats = {
     total: packages.length,
@@ -20,7 +23,14 @@ export default function PackageList() {
   const handleSave = (data: Omit<Package, 'id' | 'routeOrder'>) => {
     if (editTarget) updatePackage(editTarget.id, data);
     else addPackage(data);
-    setShowModal(false); setEditTarget(undefined);
+    setShowModal(false); setEditTarget(undefined); setScannedCode(undefined);
+  };
+
+  const handleScan = (text: string) => {
+    setShowScanner(false);
+    setScannedCode(text);
+    setEditTarget(undefined);
+    setShowModal(true);
   };
 
   return (
@@ -31,7 +41,12 @@ export default function PackageList() {
           <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
             style={{ border: '1px solid var(--border)', background: 'var(--washi)', color: 'var(--ink)', fontFamily: 'var(--font-sans)', fontSize: 13, borderRadius: 8, flex: 1 }}
             className="px-3 py-1.5 outline-none" />
-          <button onClick={() => { setEditTarget(undefined); setShowModal(true); }}
+          <button onClick={() => setShowScanner(true)}
+            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--ink-muted)', borderRadius: 20, fontFamily: 'var(--font-sans)', fontSize: 13 }}
+            className="px-3 py-1.5 whitespace-nowrap">
+            ▦ スキャン
+          </button>
+          <button onClick={() => { setEditTarget(undefined); setScannedCode(undefined); setShowModal(true); }}
             style={{ background: 'var(--ink)', color: '#fff', borderRadius: 20, fontFamily: 'var(--font-sans)', fontSize: 13 }}
             className="px-4 py-1.5 font-medium whitespace-nowrap">
             ＋ 追加
@@ -72,9 +87,12 @@ export default function PackageList() {
         ))}
       </div>
 
+      {showScanner && (
+        <BarcodeScanner onScan={handleScan} onClose={() => setShowScanner(false)} />
+      )}
       {showModal && (
-        <PackageModal pkg={editTarget} defaultDate={selectedDate}
-          onSave={handleSave} onClose={() => { setShowModal(false); setEditTarget(undefined); }} />
+        <PackageModal pkg={editTarget} defaultDate={selectedDate} scannedCode={scannedCode}
+          onSave={handleSave} onClose={() => { setShowModal(false); setEditTarget(undefined); setScannedCode(undefined); }} />
       )}
       {confirmDelete && (
         <ConfirmDialog
