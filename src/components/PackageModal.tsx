@@ -9,32 +9,22 @@ interface Props {
 }
 
 async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
-  // 国土地理院API（日本の住所に最適）
   try {
-    const q = encodeURIComponent(address);
-    const res = await fetch(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${q}`);
+    const res = await fetch(`https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent(address)}`);
     const data = await res.json();
     if (Array.isArray(data) && data.length > 0) {
       const [lng, lat] = data[0].geometry.coordinates;
       return { lat, lng };
     }
-  } catch {
-    // ignore
-  }
-  // フォールバック: Nominatim
+  } catch { /* ignore */ }
   try {
-    const q = encodeURIComponent(address);
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=jp`,
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=jp`,
       { headers: { 'Accept-Language': 'ja,en' } }
     );
     const data = await res.json();
-    if (data && data[0]) {
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-    }
-  } catch {
-    // ignore
-  }
+    if (data?.[0]) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  } catch { /* ignore */ }
   return null;
 }
 
@@ -53,194 +43,132 @@ export default function PackageModal({ pkg, defaultDate, onSave, onClose }: Prop
   const [geocodeStatus, setGeocodeStatus] = useState<'idle' | 'ok' | 'fail'>('idle');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    if (pkg?.lat) setGeocodeStatus('ok');
-  }, [pkg]);
+  useEffect(() => { if (pkg?.lat) setGeocodeStatus('ok'); }, [pkg]);
 
   const handleGeocode = async () => {
     if (!address.trim()) return;
-    setGeocoding(true);
-    setGeocodeStatus('idle');
-    const result = await geocodeAddress(address);
+    setGeocoding(true); setGeocodeStatus('idle');
+    const r = await geocodeAddress(address);
     setGeocoding(false);
-    if (result) {
-      setLat(result.lat);
-      setLng(result.lng);
-      setGeocodeStatus('ok');
-    } else {
-      setGeocodeStatus('fail');
-    }
+    if (r) { setLat(r.lat); setLng(r.lng); setGeocodeStatus('ok'); }
+    else setGeocodeStatus('fail');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customerName.trim()) { setError('名前を入力してください'); return; }
     if (!address.trim()) { setError('住所を入力してください'); return; }
-
     onSave({
-      customerName: customerName.trim(),
-      address: address.trim(),
-      size,
-      cool,
-      collect,
-      collectAmount: collect && collectAmount ? parseInt(collectAmount, 10) : undefined,
-      notes: notes.trim() || undefined,
-      date,
-      lat,
-      lng,
-      delivered: pkg?.delivered ?? false,
+      customerName: customerName.trim(), address: address.trim(), size, cool,
+      collect, collectAmount: collect && collectAmount ? parseInt(collectAmount, 10) : undefined,
+      notes: notes.trim() || undefined, date, lat, lng, delivered: pkg?.delivered ?? false,
     });
   };
 
+  const coolColors: Record<CoolType, string> = {
+    none: 'var(--ink)', refrigerated: 'var(--cool)', frozen: 'var(--frozen)',
+  };
+
   return (
-    <div
-      className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 sticky top-0 bg-white">
-          <h2 className="text-lg font-bold text-slate-800">
+    <div style={{ background: 'rgba(28,25,23,0.4)' }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: 'var(--surface)', borderTop: '1px solid var(--border)' }}
+        className="rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
+        <div style={{ borderBottom: '1px solid var(--border)' }} className="flex items-center justify-between px-5 py-4 sticky top-0"
+          // @ts-ignore
+          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+          <h2 style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 18 }} className="font-bold">
             {pkg ? '荷物を編集' : '荷物を追加'}
           </h2>
-          <button onClick={onClose} className="text-2xl text-slate-400 hover:text-slate-600 leading-none">×</button>
+          <button onClick={onClose} style={{ color: 'var(--ink-muted)', fontSize: 22, lineHeight: 1 }}>×</button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          {/* Date */}
+        <form onSubmit={handleSubmit} className="p-5 space-y-5">
           <Field label="配達日">
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className={inputCls}
-            />
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inp} />
           </Field>
-
-          {/* Name */}
           <Field label="お客様名">
-            <input
-              type="text"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="例：田中 花子"
-              className={inputCls}
-            />
+            <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="例：田中 花子" className={inp} />
           </Field>
-
-          {/* Address */}
           <Field label="住所">
             <div className="flex gap-2">
-              <input
-                type="text"
-                value={address}
+              <input type="text" value={address}
                 onChange={(e) => { setAddress(e.target.value); setGeocodeStatus('idle'); }}
-                placeholder="例：東京都千代田区千代田1-1"
-                className={`${inputCls} flex-1`}
-              />
-              <button
-                type="button"
-                onClick={handleGeocode}
-                disabled={geocoding || !address.trim()}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 rounded-lg text-sm font-medium disabled:opacity-40 whitespace-nowrap"
-              >
-                {geocoding ? '取得中…' : '📍取得'}
+                placeholder="例：名古屋市南区豊田1-7-17" className={`${inp} flex-1`} />
+              <button type="button" onClick={handleGeocode} disabled={geocoding || !address.trim()}
+                style={{ background: geocodeStatus === 'ok' ? 'var(--delivered)' : 'var(--accent)', color: '#fff', borderRadius: 10, fontSize: 12 }}
+                className="px-3 py-2 font-medium disabled:opacity-40 whitespace-nowrap">
+                {geocoding ? '取得中…' : geocodeStatus === 'ok' ? '✓取得済' : '📍取得'}
               </button>
             </div>
-            {geocodeStatus === 'ok' && (
-              <p className="text-xs text-green-600 mt-1">✓ 地図の位置を取得しました</p>
-            )}
             {geocodeStatus === 'fail' && (
-              <p className="text-xs text-red-500 mt-1">⚠ 位置の取得に失敗しました（保存は可能です）</p>
+              <p style={{ color: 'var(--accent)', fontSize: 11 }} className="mt-1">取得失敗（保存は可能です）</p>
             )}
           </Field>
 
-          {/* Size */}
           <Field label="サイズ">
-            <select
-              value={size}
-              onChange={(e) => setSize(parseInt(e.target.value, 10) as PackageSize)}
-              className={inputCls}
-            >
+            <div className="grid grid-cols-4 gap-1.5">
               {PACKAGE_SIZES.map((s) => (
-                <option key={s} value={s}>{s}サイズ</option>
+                <button key={s} type="button" onClick={() => setSize(s)}
+                  style={{
+                    borderRadius: 8, fontSize: 12, padding: '6px 0', fontFamily: 'var(--font-mono)',
+                    background: size === s ? 'var(--ink)' : 'transparent',
+                    color: size === s ? '#fff' : 'var(--ink-muted)',
+                    border: `1px solid ${size === s ? 'var(--ink)' : 'var(--border)'}`,
+                  }}>
+                  {s}
+                </button>
               ))}
-            </select>
+            </div>
           </Field>
 
-          {/* Cool */}
           <Field label="クール">
             <div className="flex gap-2">
               {(['none', 'refrigerated', 'frozen'] as CoolType[]).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setCool(c)}
-                  className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
-                    cool === c
-                      ? c === 'none'
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : c === 'refrigerated'
-                        ? 'bg-cyan-600 text-white border-cyan-600'
-                        : 'bg-purple-600 text-white border-purple-600'
-                      : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
+                <button key={c} type="button" onClick={() => setCool(c)}
+                  style={{
+                    flex: 1, padding: '8px 0', borderRadius: 10, fontSize: 13,
+                    background: cool === c ? coolColors[c] : 'transparent',
+                    color: cool === c ? '#fff' : 'var(--ink-muted)',
+                    border: `1px solid ${cool === c ? coolColors[c] : 'var(--border)'}`,
+                  }}>
                   {COOL_LABELS[c]}
                 </button>
               ))}
             </div>
           </Field>
 
-          {/* Collect */}
           <div>
             <label className="flex items-center gap-3 cursor-pointer">
-              <div
-                onClick={() => setCollect(!collect)}
-                className={`w-12 h-6 rounded-full transition-colors flex items-center px-1 ${
-                  collect ? 'bg-amber-500' : 'bg-slate-300'
-                }`}
-              >
-                <div className={`w-4 h-4 bg-white rounded-full shadow transition-transform ${collect ? 'translate-x-6' : ''}`} />
+              <div onClick={() => setCollect(!collect)}
+                style={{ width: 44, height: 24, borderRadius: 12, background: collect ? 'var(--accent)' : 'var(--border)', padding: '3px', display: 'flex', alignItems: 'center', transition: 'background 0.2s' }}>
+                <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: collect ? 'translateX(20px)' : 'none', transition: 'transform 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
               </div>
-              <span className="text-sm font-medium text-slate-700">コレクト（代引き）</span>
+              <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink)', fontSize: 14 }}>コレクト（代引き）</span>
             </label>
             {collect && (
               <div className="mt-2 flex items-center gap-2">
-                <span className="text-sm text-slate-600">金額</span>
-                <input
-                  type="number"
-                  value={collectAmount}
-                  onChange={(e) => setCollectAmount(e.target.value)}
-                  placeholder="0"
-                  className={`${inputCls} flex-1`}
-                  min="0"
-                />
-                <span className="text-sm text-slate-600">円</span>
+                <span style={{ color: 'var(--ink-muted)', fontSize: 13 }}>金額</span>
+                <input type="number" value={collectAmount} onChange={(e) => setCollectAmount(e.target.value)}
+                  placeholder="0" className={`${inp} flex-1`} min="0" />
+                <span style={{ color: 'var(--ink-muted)', fontSize: 13 }}>円</span>
               </div>
             )}
           </div>
 
-          {/* Notes */}
           <Field label="備考（任意）">
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="例：玄関前に置く"
-              className={inputCls}
-            />
+            <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)}
+              placeholder="例：玄関前に置く" className={inp} />
           </Field>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-3 py-2">
-              {error}
-            </div>
-          )}
+          {error && <p style={{ color: 'var(--accent)', fontSize: 13, textAlign: 'center' }}>{error}</p>}
 
-          <button
-            type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition-colors"
-          >
+          <button type="submit"
+            style={{ width: '100%', background: 'var(--ink)', color: '#fff', borderRadius: 14, padding: '14px 0', fontFamily: 'var(--font-serif)', fontSize: 15, letterSpacing: '0.1em' }}>
             {pkg ? '更新する' : '追加する'}
           </button>
         </form>
@@ -249,14 +177,19 @@ export default function PackageModal({ pkg, defaultDate, onSave, onClose }: Prop
   );
 }
 
-const inputCls =
-  'w-full border border-slate-300 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white';
+const inp = [
+  'w-full px-4 py-2.5 text-sm outline-none',
+  'bg-transparent',
+].join(' ');
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
-      {children}
+      <label style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', fontSize: 11, letterSpacing: '0.1em' }}
+        className="block mb-1.5 uppercase">{label}</label>
+      <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--washi)' }}>
+        {children}
+      </div>
     </div>
   );
 }

@@ -9,7 +9,6 @@ export default function History() {
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [viewMonth, setViewMonth] = useState(() => format(new Date(), 'yyyy-MM'));
 
-  // Group packages by date
   const byDate = useMemo(() => {
     const map: Record<string, Package[]> = {};
     for (const pkg of packages) {
@@ -21,191 +20,141 @@ export default function History() {
 
   const monthStart = parseISO(`${viewMonth}-01`);
   const allDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
-  const monthDates = allDates.filter((d) => d.startsWith(viewMonth));
+  const monthDates = allDates.filter(d => d.startsWith(viewMonth));
 
-  // Monthly totals
-  const monthTotal = monthDates.reduce((sum, d) => sum + byDate[d].length, 0);
-  const monthDelivered = monthDates.reduce(
-    (sum, d) => sum + byDate[d].filter((p) => p.delivered).length,
-    0
-  );
+  const monthTotal = monthDates.reduce((s, d) => s + byDate[d].length, 0);
+  const monthDelivered = monthDates.reduce((s, d) => s + byDate[d].filter(p => p.delivered).length, 0);
 
-  const navigateToDate = (date: string) => {
-    setSelectedDate(date);
-    setActiveTab('packages');
+  const prevMonth = () => {
+    const d = new Date(monthStart); d.setMonth(d.getMonth() - 1);
+    setViewMonth(format(d, 'yyyy-MM'));
+  };
+  const nextMonth = () => {
+    const d = new Date(monthStart); d.setMonth(d.getMonth() + 1);
+    setViewMonth(format(d, 'yyyy-MM'));
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div style={{ background: 'var(--washi)' }} className="flex flex-col h-full">
       {/* Header */}
-      <div className="bg-white border-b border-slate-200 px-4 py-3 flex-shrink-0">
-        <div className="flex items-center gap-2 mb-3">
-          <button
-            onClick={() => {
-              const d = new Date(monthStart);
-              d.setMonth(d.getMonth() - 1);
-              setViewMonth(format(d, 'yyyy-MM'));
-            }}
-            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600"
-          >
-            ◀
-          </button>
-          <span className="flex-1 text-center font-bold text-slate-800">
+      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }} className="px-4 pt-3 pb-4 flex-shrink-0">
+        <div className="flex items-center gap-2 mb-4">
+          <button onClick={prevMonth} style={{ color: 'var(--ink-muted)', background: 'transparent', padding: '4px 8px', fontSize: 16 }}>◀</button>
+          <span style={{ flex: 1, textAlign: 'center', fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 18, fontWeight: 700 }}>
             {format(monthStart, 'yyyy年M月', { locale: ja })}
           </span>
-          <button
-            onClick={() => {
-              const d = new Date(monthStart);
-              d.setMonth(d.getMonth() + 1);
-              setViewMonth(format(d, 'yyyy-MM'));
-            }}
-            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-600"
-          >
-            ▶
-          </button>
+          <button onClick={nextMonth} style={{ color: 'var(--ink-muted)', background: 'transparent', padding: '4px 8px', fontSize: 16 }}>▶</button>
         </div>
-
-        {/* Month summary */}
+        {/* Monthly stats */}
         <div className="grid grid-cols-3 gap-2">
-          <SummaryBox label="持出し合計" value={monthTotal} unit="件" color="blue" />
-          <SummaryBox label="配達済" value={monthDelivered} unit="件" color="green" />
-          <SummaryBox label="稼働日数" value={monthDates.length} unit="日" color="slate" />
+          {[
+            { label: '持出し合計', value: monthTotal, color: 'var(--ink)' },
+            { label: '配達済', value: monthDelivered, color: 'var(--delivered)' },
+            { label: '稼働日数', value: monthDates.length, unit: '日', color: 'var(--ink-muted)' },
+          ].map(({ label, value, unit, color }) => (
+            <div key={label} style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--washi)' }}
+              className="text-center py-2.5">
+              <div style={{ fontFamily: 'var(--font-mono)', color, fontSize: 22, lineHeight: 1.1 }}>
+                {value}
+                <span style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', marginLeft: 1 }}>{unit ?? '件'}</span>
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', marginTop: 2 }}>{label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
       {/* Day list */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {monthDates.length === 0 ? (
-          <div className="text-center py-16 text-slate-400">
-            <div className="text-5xl mb-3">📋</div>
-            <p className="text-sm">この月の記録はありません</p>
+          <div className="text-center py-16">
+            <div className="text-5xl mb-3">冊</div>
+            <p style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }} className="text-sm">この月の記録はありません</p>
           </div>
-        ) : (
-          monthDates.map((date) => {
-            const dayPkgs = byDate[date].sort((a, b) => a.routeOrder - b.routeOrder);
-            const delivered = dayPkgs.filter((p) => p.delivered).length;
-            const cool = dayPkgs.filter((p) => p.cool !== 'none').length;
-            const collect = dayPkgs.filter((p) => p.collect).length;
-            const isExpanded = expandedDate === date;
+        ) : monthDates.map((date) => {
+          const dayPkgs = byDate[date].sort((a, b) => a.routeOrder - b.routeOrder);
+          const dlv = dayPkgs.filter(p => p.delivered).length;
+          const cool = dayPkgs.filter(p => p.cool !== 'none').length;
+          const collect = dayPkgs.filter(p => p.collect).length;
+          const done = dlv === dayPkgs.length && dayPkgs.length > 0;
+          const expanded = expandedDate === date;
+          const d = parseISO(date);
+          const dow = format(d, 'EEE', { locale: ja });
+          const isSat = format(d, 'e') === '7';
+          const isSun = format(d, 'e') === '1';
 
-            return (
-              <div key={date} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                {/* Day header */}
-                <button
-                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50"
-                  onClick={() => setExpandedDate(isExpanded ? null : date)}
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-800">
-                        {format(parseISO(date), 'M月d日（EEE）', { locale: ja })}
+          return (
+            <div key={date} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+              <button className="w-full flex items-center gap-3 px-4 py-3 text-left"
+                onClick={() => setExpandedDate(expanded ? null : date)}
+                style={{ background: 'transparent' }}>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 15, fontWeight: 700 }}>
+                      {format(d, 'M月d日', { locale: ja })}
+                    </span>
+                    <span style={{ fontSize: 13, color: isSun ? '#C0392B' : isSat ? '#2980B9' : 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }}>
+                      （{dow}）
+                    </span>
+                    {done && (
+                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, border: '1px solid var(--delivered)', color: 'var(--delivered)', fontFamily: 'var(--font-sans)' }}>完了</span>
+                    )}
+                  </div>
+                  <div className="flex gap-3 mt-1">
+                    {[
+                      { label: '持出し', value: dayPkgs.length, color: 'var(--ink)' },
+                      { label: '配達済', value: dlv, color: 'var(--delivered)' },
+                      ...(cool > 0 ? [{ label: 'クール', value: cool, color: 'var(--cool)' }] : []),
+                      ...(collect > 0 ? [{ label: 'コレクト', value: collect, color: 'var(--accent)' }] : []),
+                    ].map(({ label, value, color }) => (
+                      <span key={label} style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }}>
+                        {label} <b style={{ color, fontFamily: 'var(--font-mono)' }}>{value}</b>件
                       </span>
-                      {delivered === dayPkgs.length && delivered > 0 && (
-                        <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
-                          完了
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex gap-3 mt-1 text-xs text-slate-500">
-                      <span>持出し <b className="text-blue-600">{dayPkgs.length}</b>件</span>
-                      <span>配達済 <b className="text-green-600">{delivered}</b>件</span>
-                      {cool > 0 && <span>クール <b className="text-cyan-600">{cool}</b>件</span>}
-                      {collect > 0 && <span>コレクト <b className="text-amber-600">{collect}</b>件</span>}
-                    </div>
-                  </div>
-                  <div className="text-slate-400 text-sm">{isExpanded ? '▲' : '▼'}</div>
-                </button>
-
-                {/* Expanded: package list */}
-                {isExpanded && (
-                  <div className="border-t border-slate-100">
-                    <SizeSummaryRow packages={dayPkgs} />
-                    {dayPkgs.map((pkg, idx) => (
-                      <div
-                        key={pkg.id}
-                        className={`flex items-center gap-2 px-4 py-2 text-sm border-t border-slate-50 ${
-                          pkg.delivered ? 'text-slate-400' : 'text-slate-700'
-                        }`}
-                      >
-                        <span
-                          className={`w-5 h-5 rounded-full flex items-center justify-center text-xs text-white font-bold flex-shrink-0 ${
-                            pkg.delivered ? 'bg-green-400' : 'bg-blue-500'
-                          }`}
-                        >
-                          {idx + 1}
-                        </span>
-                        <span className={`flex-1 truncate ${pkg.delivered ? 'line-through' : ''}`}>
-                          {pkg.customerName}
-                        </span>
-                        <span className="text-xs text-slate-400">{pkg.size}s</span>
-                        {pkg.cool !== 'none' && (
-                          <span className={`text-xs font-medium ${pkg.cool === 'frozen' ? 'text-purple-500' : 'text-cyan-500'}`}>
-                            {pkg.cool === 'frozen' ? '冷凍' : '冷蔵'}
-                          </span>
-                        )}
-                        {pkg.collect && <span className="text-xs text-amber-500 font-medium">¥</span>}
-                      </div>
                     ))}
-                    <div className="px-4 py-2 flex justify-end">
-                      <button
-                        onClick={() => navigateToDate(date)}
-                        className="text-xs text-blue-600 font-medium hover:underline"
-                      >
-                        この日の詳細を見る →
-                      </button>
-                    </div>
                   </div>
-                )}
-              </div>
-            );
-          })
-        )}
+                </div>
+                <span style={{ color: 'var(--ink-muted)', fontSize: 12 }}>{expanded ? '▲' : '▼'}</span>
+              </button>
+
+              {expanded && (
+                <div style={{ borderTop: '1px solid var(--border)' }}>
+                  {/* Size summary */}
+                  <div style={{ background: 'var(--washi)' }} className="px-4 py-2 flex flex-wrap gap-1.5">
+                    {Object.entries(
+                      dayPkgs.reduce<Record<number, number>>((a, p) => ({ ...a, [p.size]: (a[p.size] ?? 0) + 1 }), {})
+                    ).sort(([a], [b]) => +a - +b).map(([s, c]) => (
+                      <span key={s} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, border: '1px solid var(--border)', color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)', background: 'var(--surface)' }}>
+                        {s}s × {c}
+                      </span>
+                    ))}
+                  </div>
+                  {/* Packages */}
+                  {dayPkgs.map((pkg, idx) => (
+                    <div key={pkg.id}
+                      style={{ borderTop: '1px solid var(--border)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8, opacity: pkg.delivered ? 0.6 : 1 }}>
+                      <div style={{ width: 20, height: 20, borderRadius: '50%', border: `2px solid ${pkg.delivered ? 'var(--delivered)' : 'var(--border)'}`, color: pkg.delivered ? 'var(--delivered)' : 'var(--ink-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                        {idx + 1}
+                      </div>
+                      <span style={{ flex: 1, fontFamily: 'var(--font-sans)', color: 'var(--ink)', fontSize: 13, textDecoration: pkg.delivered ? 'line-through' : 'none' }} className="truncate">
+                        {pkg.customerName}
+                      </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--ink-muted)', fontSize: 11 }}>{pkg.size}s</span>
+                      {pkg.cool !== 'none' && <span style={{ fontSize: 11, color: pkg.cool === 'frozen' ? 'var(--frozen)' : 'var(--cool)', fontFamily: 'var(--font-sans)' }}>{pkg.cool === 'frozen' ? '冷凍' : '冷蔵'}</span>}
+                      {pkg.collect && <span style={{ fontSize: 11, color: 'var(--accent)', fontFamily: 'var(--font-sans)' }}>¥</span>}
+                    </div>
+                  ))}
+                  <div style={{ borderTop: '1px solid var(--border)', padding: '8px 16px', textAlign: 'right' }}>
+                    <button onClick={() => { setSelectedDate(date); setActiveTab('packages'); }}
+                      style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'var(--font-sans)', background: 'transparent' }}>
+                      この日の詳細 →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
-    </div>
-  );
-}
-
-function SizeSummaryRow({ packages }: { packages: Package[] }) {
-  const sizes = packages.reduce<Record<number, number>>((acc, p) => {
-    acc[p.size] = (acc[p.size] ?? 0) + 1;
-    return acc;
-  }, {});
-  const entries = Object.entries(sizes).sort(([a], [b]) => parseInt(a) - parseInt(b));
-
-  return (
-    <div className="px-4 py-2 flex flex-wrap gap-1.5 bg-slate-50">
-      {entries.map(([size, count]) => (
-        <span key={size} className="text-xs bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
-          {size}s × {count}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function SummaryBox({
-  label,
-  value,
-  unit,
-  color,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  color: 'blue' | 'green' | 'slate';
-}) {
-  const colors = {
-    blue: 'bg-blue-50 text-blue-700',
-    green: 'bg-green-50 text-green-700',
-    slate: 'bg-slate-100 text-slate-700',
-  };
-  return (
-    <div className={`rounded-xl px-2 py-2 text-center ${colors[color]}`}>
-      <div className="text-xl font-bold leading-tight">
-        {value}
-        <span className="text-xs font-normal ml-0.5">{unit}</span>
-      </div>
-      <div className="text-xs opacity-70 mt-0.5">{label}</div>
     </div>
   );
 }

@@ -14,8 +14,7 @@ export default function Login() {
     e.preventDefault();
     setError('');
     if (mode === 'login') {
-      const ok = login(name.trim(), pin);
-      if (!ok) setError('名前またはパスワードが違います');
+      if (!login(name.trim(), pin)) setError('名前またはパスワードが違います');
     } else {
       const result = register(name.trim(), pin);
       if (!result.ok) setError(result.error ?? '登録に失敗しました');
@@ -27,24 +26,31 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8">
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🚐</div>
-          <h1 className="text-2xl font-bold text-slate-800">配送マップ</h1>
-          <p className="text-slate-500 text-sm mt-1">軽貨物配送管理</p>
+    <div style={{ background: 'var(--washi)' }} className="min-h-screen flex items-center justify-center p-6">
+      <div className="w-full max-w-sm">
+        {/* Title */}
+        <div className="text-center mb-10">
+          <div className="text-5xl mb-4">🚐</div>
+          <h1 style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)' }} className="text-3xl font-bold tracking-wide">
+            荷物ルートマップ
+          </h1>
+          <div style={{ background: 'var(--accent)', height: 2 }} className="w-16 mx-auto mt-3 mb-3 rounded" />
+          <p style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }} className="text-sm">
+            軽貨物配送管理
+          </p>
         </div>
 
-        <div className="flex rounded-lg overflow-hidden border border-slate-200 mb-6">
+        {/* Mode tabs */}
+        <div style={{ border: '1px solid var(--border)', background: 'var(--surface)' }}
+          className="flex rounded-xl overflow-hidden mb-6">
           {(['login', 'register'] as Mode[]).map((m) => (
             <button
               key={m}
               onClick={() => { setMode(m); setError(''); }}
-              className={`flex-1 py-2 text-sm font-medium transition-colors ${
-                mode === m
-                  ? 'bg-blue-600 text-white'
-                  : 'text-slate-600 hover:bg-slate-50'
-              }`}
+              style={mode === m
+                ? { background: 'var(--accent)', color: '#fff' }
+                : { color: 'var(--ink-muted)', background: 'transparent' }}
+              className="flex-1 py-2.5 text-sm font-medium transition-all"
             >
               {m === 'login' ? 'ログイン' : '新規登録'}
             </button>
@@ -52,46 +58,64 @@ export default function Login() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">名前</label>
+          <Field label="名前">
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="例：田中 太郎"
-              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={inputCls}
               autoComplete="username"
             />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              パスワード（4桁）
-            </label>
+          </Field>
+          <Field label="パスワード（4桁）">
             <input
               type="password"
               inputMode="numeric"
               value={pin}
               onChange={(e) => handlePinChange(e.target.value)}
-              placeholder="0000"
+              placeholder="••••"
               maxLength={4}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-slate-800 tracking-widest text-center text-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ letterSpacing: '0.5em', fontFamily: 'var(--font-mono)' }}
+              className={`${inputCls} text-center text-xl`}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             />
-          </div>
+          </Field>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-3 py-2">
+            <p style={{ color: 'var(--accent)', fontFamily: 'var(--font-sans)' }}
+              className="text-sm text-center">
               {error}
-            </div>
+            </p>
           )}
 
           <button
             type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold py-3 rounded-lg transition-colors mt-2"
+            style={{ background: 'var(--accent)', fontFamily: 'var(--font-serif)' }}
+            className="w-full text-white font-semibold py-3 rounded-xl text-base tracking-widest mt-2 hover:opacity-90 transition-opacity"
           >
-            {mode === 'login' ? 'ログイン' : '登録してはじめる'}
+            {mode === 'login' ? '入る' : '登録して始める'}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+const inputCls = [
+  'w-full rounded-xl px-4 py-3 text-sm',
+  'outline-none transition-all',
+].join(' ');
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', fontSize: 12, letterSpacing: '0.08em' }}
+        className="block mb-1 uppercase">
+        {label}
+      </label>
+      <div style={{ border: '1px solid var(--border)', background: 'var(--surface)', borderRadius: 12 }}>
+        {children}
       </div>
     </div>
   );
