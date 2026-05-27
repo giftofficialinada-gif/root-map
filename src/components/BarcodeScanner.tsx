@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BrowserMultiFormatReader } from '@zxing/browser';
+import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 import { X, ScanLine } from 'lucide-react';
 
 interface Props {
@@ -9,24 +9,22 @@ interface Props {
 
 export default function BarcodeScanner({ onScan, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const readerRef = useRef<BrowserMultiFormatReader | null>(null);
+  const controlsRef = useRef<IScannerControls | null>(null);
   const [error, setError] = useState('');
-  const [scanning, setScanning] = useState(true);
 
   useEffect(() => {
     const reader = new BrowserMultiFormatReader();
-    readerRef.current = reader;
+    let done = false;
 
     reader.decodeFromConstraints(
       { video: { facingMode: 'environment' } },
       videoRef.current!,
-      (result, err) => {
-        if (result && scanning) {
-          setScanning(false);
+      (result, _err, controls) => {
+        controlsRef.current = controls;
+        if (result && !done) {
+          done = true;
+          controls.stop();
           onScan(result.getText());
-        }
-        if (err && !(err.message?.includes('No MultiFormat Readers'))) {
-          // suppress continuous "no barcode found" errors
         }
       }
     ).catch(() => {
@@ -34,6 +32,8 @@ export default function BarcodeScanner({ onScan, onClose }: Props) {
     });
 
     return () => {
+      done = true;
+      controlsRef.current?.stop();
       BrowserMultiFormatReader.releaseAllStreams();
     };
   }, []);
@@ -72,23 +72,6 @@ export default function BarcodeScanner({ onScan, onClose }: Props) {
               boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
             }} />
           </div>
-
-          {/* Corner marks */}
-          {[
-            { top: '32.5%', left: '14%' },
-            { top: '32.5%', right: '14%' },
-            { bottom: '32.5%', left: '14%' },
-            { bottom: '32.5%', right: '14%' },
-          ].map((pos, i) => (
-            <div key={i} style={{
-              position: 'absolute', ...pos,
-              width: 16, height: 16,
-              borderColor: 'var(--accent)',
-              borderStyle: 'solid',
-              borderWidth: i < 2 ? '2px 0 0 2px' : '0 0 2px 2px',
-              ...(i % 2 === 1 ? { borderWidth: i < 2 ? '2px 2px 0 0' : '0 2px 2px 0' } : {}),
-            }} />
-          ))}
         </div>
 
         <div className="px-5 py-4 text-center">
