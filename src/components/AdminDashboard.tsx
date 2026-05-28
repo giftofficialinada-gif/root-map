@@ -9,7 +9,7 @@ import PackageModal from './PackageModal';
 type AdminTab = 'packages' | 'users' | 'settings';
 
 export default function AdminDashboard() {
-  const { adminLogout, packages, users, deletePackage, updatePackage, deleteUser, updateAdminPassword, adminPassword } = useAppStore();
+  const { adminLogout, packages, users, deletePackage, updatePackage, deleteUser, updateAdminCredentials, adminId, adminPassword } = useAppStore();
   const [tab, setTab] = useState<AdminTab>('packages');
   const [editTarget, setEditTarget] = useState<Package | undefined>();
   const [showModal, setShowModal] = useState(false);
@@ -112,7 +112,7 @@ export default function AdminDashboard() {
           <UsersTab users={users} packages={packages} onDelete={(name) => setConfirmDeleteUser(name)} />
         )}
         {tab === 'settings' && (
-          <SettingsTab currentPassword={adminPassword} onSave={updateAdminPassword} />
+          <SettingsTab currentId={adminId} currentPassword={adminPassword} onSave={updateAdminCredentials} />
         )}
       </div>
 
@@ -281,7 +281,12 @@ function UsersTab({ users, packages, onDelete }: {
 }
 
 /* ── Settings Tab ── */
-function SettingsTab({ onSave }: { currentPassword: string; onSave: (p: string) => void }) {
+function SettingsTab({ currentId, onSave }: {
+  currentId: string;
+  currentPassword: string;
+  onSave: (newId: string, newPassword: string) => void;
+}) {
+  const [newId, setNewId] = useState(currentId);
   const [pw, setPw] = useState('');
   const [pw2, setPw2] = useState('');
   const [msg, setMsg] = useState('');
@@ -289,11 +294,12 @@ function SettingsTab({ onSave }: { currentPassword: string; onSave: (p: string) 
 
   const handleChange = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newId.trim()) { setIsError(true); setMsg('IDを入力してください'); return; }
     if (!pw.trim()) { setIsError(true); setMsg('新しいパスワードを入力してください'); return; }
     if (pw !== pw2) { setIsError(true); setMsg('パスワードが一致しません'); return; }
-    onSave(pw);
+    onSave(newId.trim(), pw);
     setIsError(false);
-    setMsg('パスワードを変更しました');
+    setMsg('ログイン情報を変更しました');
     setPw(''); setPw2('');
   };
 
@@ -301,16 +307,21 @@ function SettingsTab({ onSave }: { currentPassword: string; onSave: (p: string) 
     <div className="p-4 space-y-4">
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
         <div style={{ borderBottom: '1px solid var(--border)' }} className="px-4 py-3">
-          <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 15, fontWeight: 700 }}>管理者パスワード変更</p>
-          <p style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink-muted)', fontSize: 11, marginTop: 2 }}>ID: admin（変更不可）</p>
+          <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 15, fontWeight: 700 }}>管理者ログイン情報の変更</p>
+          <p style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink-muted)', fontSize: 11, marginTop: 2 }}>現在のID: {currentId}</p>
         </div>
         <form onSubmit={handleChange} className="p-4 space-y-3">
+          <SField label="新しいID">
+            <input type="text" value={newId} onChange={e => setNewId(e.target.value)}
+              placeholder="新しいID"
+              style={{ width: '100%', background: 'transparent', outline: 'none', fontFamily: 'var(--font-sans)', fontSize: 14, color: 'var(--ink)', padding: '10px 14px' }} />
+          </SField>
           <SField label="新しいパスワード">
             <input type="password" value={pw} onChange={e => setPw(e.target.value)}
               placeholder="新しいパスワード"
               style={{ width: '100%', background: 'transparent', outline: 'none', fontFamily: 'var(--font-sans)', fontSize: 14, color: 'var(--ink)', padding: '10px 14px' }} />
           </SField>
-          <SField label="確認">
+          <SField label="パスワード確認">
             <input type="password" value={pw2} onChange={e => setPw2(e.target.value)}
               placeholder="もう一度入力"
               style={{ width: '100%', background: 'transparent', outline: 'none', fontFamily: 'var(--font-sans)', fontSize: 14, color: 'var(--ink)', padding: '10px 14px' }} />

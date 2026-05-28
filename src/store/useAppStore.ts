@@ -13,11 +13,12 @@ interface AppStore {
   deleteUser: (name: string) => void;
 
   // Admin
+  adminId: string;
   adminPassword: string;
   isAdminLoggedIn: boolean;
   adminLogin: (id: string, password: string) => boolean;
   adminLogout: () => void;
-  updateAdminPassword: (newPassword: string) => void;
+  updateAdminCredentials: (newId: string, newPassword: string) => void;
 
   // Navigation
   activeTab: TabType;
@@ -55,6 +56,7 @@ export const useAppStore = create<AppStore>()(
       activeTab: 'map',
       selectedDate: today(),
       packages: [],
+      adminId: 'admin',
       adminPassword: 'admin1234',
       isAdminLoggedIn: false,
       lastLocation: null,
@@ -81,7 +83,7 @@ export const useAppStore = create<AppStore>()(
       },
 
       adminLogin: (id, password) => {
-        if (id === 'admin' && password === get().adminPassword) {
+        if (id === get().adminId && password === get().adminPassword) {
           set({ isAdminLoggedIn: true });
           return true;
         }
@@ -90,7 +92,7 @@ export const useAppStore = create<AppStore>()(
 
       adminLogout: () => set({ isAdminLoggedIn: false }),
 
-      updateAdminPassword: (newPassword) => set({ adminPassword: newPassword }),
+      updateAdminCredentials: (newId, newPassword) => set({ adminId: newId, adminPassword: newPassword }),
 
       setActiveTab: (tab) => set({ activeTab: tab }),
       setSelectedDate: (date) => set({ selectedDate: date }),
