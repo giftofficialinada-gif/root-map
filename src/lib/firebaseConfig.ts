@@ -5,11 +5,11 @@
 // 入力後 git push するとGitHub Pagesにも反映されます。
 // ─────────────────────────────────────────────────────────
 export const firebaseConfig = {
-  apiKey: "",
-  authDomain: "",
-  databaseURL: "",      // 例: https://your-project-default-rtdb.firebaseio.com
-  projectId: "",
-  storageBucket: "",
+  apiKey: "AIzaSyBK58TLrV5VF1SiXE7cQ0JZgQqZtuy-c_E",
+  authDomain: "root-map-759db.firebaseapp.com",
+  databaseURL: "https://root-map-759db-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "root-map-759db",
+  storageBucket: "root-map-759db.appspot.com",
   messagingSenderId: "",
   appId: "",
 };
