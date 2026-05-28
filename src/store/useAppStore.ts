@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { format } from 'date-fns';
 import { Package, PackageSize, CoolType, TabType, User } from '../types';
+import { writeToCloud, isCloudSyncEnabled } from '../lib/sync';
 
 interface AppStore {
   // Auth
@@ -36,17 +37,30 @@ interface AppStore {
   movePackage: (id: string, direction: 'up' | 'down') => void;
   setDelivered: (id: string, delivered: boolean) => void;
 
+  // Cloud sync
+  applyCloudData: (data: { adminId: string; adminPassword: string; users: User[]; packages: Package[] }) => void;
+
   // Map
   lastLocation: [number, number] | null;
   setLastLocation: (loc: [number, number]) => void;
 
-  // Helpers — 全てログイン中ユーザーのデータのみ返す
+  // Helpers
   getByDate: (date: string) => Package[];
   getAllForUser: () => Package[];
 }
 
 function today() {
   return format(new Date(), 'yyyy-MM-dd');
+}
+
+function cloudSync(state: Pick<AppStore, 'adminId' | 'adminPassword' | 'users' | 'packages'>) {
+  if (!isCloudSyncEnabled) return;
+  writeToCloud({
+    adminId: state.adminId,
+    adminPassword: state.adminPassword,
+    users: state.users,
+    packages: state.packages,
+  });
 }
 
 export const useAppStore = create<AppStore>()(
@@ -75,15 +89,21 @@ export const useAppStore = create<AppStore>()(
         if (!/^\d{4}$/.test(pin)) return { ok: false, error: 'パスワードは4桁の数字で入力してください' };
         if (get().users.find((u) => u.name === name))
           return { ok: false, error: 'この名前はすでに登録されています' };
-        set((s) => ({ users: [...s.users, { name, pin }], currentUser: name, activeTab: 'home' }));
+        set((s) => {
+          const users = [...s.users, { name, pin }];
+          cloudSync({ ...s, users });
+          return { users, currentUser: name, activeTab: 'home' };
+        });
         return { ok: true };
       },
 
       deleteUser: (name) => {
-        set((s) => ({
-          users: s.users.filter((u) => u.name !== name),
-          packages: s.packages.filter((p) => p.userId !== name),
-        }));
+        set((s) => {
+          const users = s.users.filter((u) => u.name !== name);
+          const packages = s.packages.filter((p) => p.userId !== name);
+          cloudSync({ ...s, users, packages });
+          return { users, packages };
+        });
       },
 
       adminLogin: (id, password) => {
@@ -96,7 +116,16 @@ export const useAppStore = create<AppStore>()(
 
       adminLogout: () => set({ isAdminLoggedIn: false }),
 
-      updateAdminCredentials: (newId, newPassword) => set({ adminId: newId, adminPassword: newPassword }),
+      updateAdminCredentials: (newId, newPassword) => {
+        set((s) => {
+          cloudSync({ ...s, adminId: newId, adminPassword: newPassword });
+          return { adminId: newId, adminPassword: newPassword };
+        });
+      },
+
+      applyCloudData: ({ adminId, adminPassword, users, packages }) => {
+        set({ adminId, adminPassword, users: users ?? [], packages: packages ?? [] });
+      },
 
       setActiveTab: (tab) => set({ activeTab: tab }),
       setSelectedDate: (date) => set({ selectedDate: date }),
@@ -113,17 +142,27 @@ export const useAppStore = create<AppStore>()(
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           routeOrder: maxOrder + 1,
         };
-        set((s) => ({ packages: [...s.packages, newPkg] }));
+        set((s) => {
+          const packages = [...s.packages, newPkg];
+          cloudSync({ ...s, packages });
+          return { packages };
+        });
       },
 
       updatePackage: (id, updates) => {
-        set((s) => ({
-          packages: s.packages.map((p) => (p.id === id ? { ...p, ...updates } : p)),
-        }));
+        set((s) => {
+          const packages = s.packages.map((p) => (p.id === id ? { ...p, ...updates } : p));
+          cloudSync({ ...s, packages });
+          return { packages };
+        });
       },
 
       deletePackage: (id) => {
-        set((s) => ({ packages: s.packages.filter((p) => p.id !== id) }));
+        set((s) => {
+          const packages = s.packages.filter((p) => p.id !== id);
+          cloudSync({ ...s, packages });
+          return { packages };
+        });
       },
 
       movePackage: (id, direction) => {
@@ -137,19 +176,23 @@ export const useAppStore = create<AppStore>()(
         const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
         if (swapIdx < 0 || swapIdx >= dayPkgs.length) return;
         const a = dayPkgs[idx]; const b = dayPkgs[swapIdx];
-        set((s) => ({
-          packages: s.packages.map((p) => {
+        set((s) => {
+          const packages = s.packages.map((p) => {
             if (p.id === a.id) return { ...p, routeOrder: b.routeOrder };
             if (p.id === b.id) return { ...p, routeOrder: a.routeOrder };
             return p;
-          }),
-        }));
+          });
+          cloudSync({ ...s, packages });
+          return { packages };
+        });
       },
 
       setDelivered: (id, delivered) => {
-        set((s) => ({
-          packages: s.packages.map((p) => (p.id === id ? { ...p, delivered } : p)),
-        }));
+        set((s) => {
+          const packages = s.packages.map((p) => (p.id === id ? { ...p, delivered } : p));
+          cloudSync({ ...s, packages });
+          return { packages };
+        });
       },
 
       getByDate: (date) => {

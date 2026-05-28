@@ -249,6 +249,89 @@ function UsersTab({ users, packages, onDelete }: {
   packages: Package[];
   onDelete: (name: string) => void;
 }) {
+  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+
+  if (selectedUser) {
+    const userPkgs = packages
+      .filter(p => p.userId === selectedUser)
+      .sort((a, b) => b.date.localeCompare(a.date) || a.routeOrder - b.routeOrder);
+
+    const byDate: Record<string, Package[]> = {};
+    for (const pkg of userPkgs) {
+      if (!byDate[pkg.date]) byDate[pkg.date] = [];
+      byDate[pkg.date].push(pkg);
+    }
+    const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+    const delivered = userPkgs.filter(p => p.delivered).length;
+
+    return (
+      <div className="flex flex-col h-full">
+        <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
+          className="px-4 py-3 flex items-center gap-3 flex-shrink-0">
+          <button onClick={() => setSelectedUser(null)}
+            style={{ color: 'var(--accent)', fontFamily: 'var(--font-sans)', fontSize: 13, background: 'transparent' }}>
+            ← 戻る
+          </button>
+          <span style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 15, fontWeight: 700 }}>
+            {selectedUser} さんの記録
+          </span>
+        </div>
+        <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
+          className="px-4 py-2 flex gap-4 flex-shrink-0">
+          {[
+            { label: '総荷物', value: userPkgs.length, color: 'var(--ink)' },
+            { label: '配達済', value: delivered, color: 'var(--delivered)' },
+            { label: '稼働日数', value: dates.length, color: 'var(--ink-muted)' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="text-center flex-1">
+              <div style={{ fontFamily: 'var(--font-mono)', color, fontSize: 20 }}>{value}</div>
+              <div style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }}>{label}</div>
+            </div>
+          ))}
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {dates.length === 0 ? (
+            <div className="text-center py-12">
+              <p style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', fontSize: 13 }}>記録がありません</p>
+            </div>
+          ) : dates.map((date) => {
+            const dayPkgs = byDate[date];
+            const dlv = dayPkgs.filter(p => p.delivered).length;
+            const d = parseISO(date);
+            return (
+              <div key={date} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+                <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)', background: 'var(--washi)' }}
+                  className="flex items-center justify-between">
+                  <span style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 14, fontWeight: 700 }}>
+                    {format(d, 'yyyy年M月d日（EEE）', { locale: ja })}
+                  </span>
+                  <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink-muted)', fontSize: 11 }}>
+                    {dayPkgs.length}件　配達済 <span style={{ color: 'var(--delivered)' }}>{dlv}</span>件
+                  </span>
+                </div>
+                {dayPkgs.map((pkg) => (
+                  <div key={pkg.id}
+                    style={{ borderTop: '1px solid var(--border)', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8, opacity: pkg.delivered ? 0.6 : 1 }}>
+                    <div className="flex-1 min-w-0">
+                      <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 13, fontWeight: 600, textDecoration: pkg.delivered ? 'line-through' : 'none' }}
+                        className="truncate">{pkg.customerName}</p>
+                      <p style={{ color: 'var(--ink-muted)', fontSize: 11, fontFamily: 'var(--font-sans)' }} className="truncate">{pkg.address}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <span style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)' }}>{pkg.size}s</span>
+                      {pkg.cool !== 'none' && <span style={{ fontSize: 10, color: pkg.cool === 'frozen' ? 'var(--frozen)' : 'var(--cool)', fontFamily: 'var(--font-sans)' }}>{COOL_LABELS[pkg.cool]}</span>}
+                      {pkg.delivered && <span style={{ fontSize: 10, color: 'var(--delivered)' }}>✓</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-3 space-y-2">
       {users.length === 0 ? (
@@ -256,19 +339,21 @@ function UsersTab({ users, packages, onDelete }: {
           <p style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }} className="text-sm">登録ユーザーがいません</p>
         </div>
       ) : users.map((user) => {
-        const count = packages.filter(p => p.date).length;
+        const count = packages.filter(p => p.userId === user.name).length;
         return (
           <div key={user.name}
             style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--washi)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <button onClick={() => setSelectedUser(user.name)}
+              style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--washi)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}>
               <Users size={18} style={{ color: 'var(--ink-muted)' }} />
-            </div>
-            <div className="flex-1 min-w-0">
+            </button>
+            <button className="flex-1 min-w-0 text-left" onClick={() => setSelectedUser(user.name)}
+              style={{ background: 'transparent' }}>
               <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 15, fontWeight: 600 }}>{user.name}</p>
               <p style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink-muted)', fontSize: 11 }}>
-                PIN: {'•'.repeat(4)}　総登録荷物: {count}件
+                登録荷物: {count}件　→ 記録を見る
               </p>
-            </div>
+            </button>
             <button onClick={() => onDelete(user.name)}
               style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Trash2 size={14} />

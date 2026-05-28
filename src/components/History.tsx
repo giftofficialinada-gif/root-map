@@ -5,7 +5,8 @@ import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
 export default function History() {
-  const { packages, setSelectedDate, setActiveTab } = useAppStore();
+  const { getAllForUser, setSelectedDate, setActiveTab } = useAppStore();
+  const packages = getAllForUser();
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
   const [viewMonth, setViewMonth] = useState(() => format(new Date(), 'yyyy-MM'));
 

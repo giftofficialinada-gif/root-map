@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAppStore } from './store/useAppStore';
+import { subscribeToCloud, isCloudSyncEnabled } from './lib/sync';
 import Login from './components/Login';
 import AdminLogin from './components/AdminLogin';
 import AdminDashboard from './components/AdminDashboard';
@@ -12,9 +13,17 @@ import Home from './components/Home';
 import SplashScreen from './components/SplashScreen';
 
 export default function App() {
-  const { currentUser, activeTab, isAdminLoggedIn } = useAppStore();
+  const { currentUser, activeTab, isAdminLoggedIn, applyCloudData } = useAppStore();
   const [splash, setSplash] = useState(true);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
+
+  // クラウド同期リスナー（Firebase設定済みの場合のみ）
+  useEffect(() => {
+    if (!isCloudSyncEnabled) return;
+    return subscribeToCloud((data) => {
+      applyCloudData(data);
+    });
+  }, []);
 
   if (splash) return <SplashScreen onDone={() => setSplash(false)} />;
   if (isAdminLoggedIn) return <AdminDashboard />;
