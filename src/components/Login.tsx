@@ -3,7 +3,7 @@ import { useAppStore } from '../store/useAppStore';
 
 type Mode = 'login' | 'register';
 
-export default function Login() {
+export default function Login({ onAdminLogin }: { onAdminLogin?: () => void }) {
   const { login, register } = useAppStore();
   const [mode, setMode] = useState<Mode>('login');
   const [name, setName] = useState('');
@@ -97,6 +97,16 @@ export default function Login() {
             {mode === 'login' ? '入る' : '登録して始める'}
           </button>
         </form>
+
+        {onAdminLogin && (
+          <button
+            onClick={onAdminLogin}
+            style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', fontSize: 11 }}
+            className="w-full text-center mt-8 opacity-50 hover:opacity-80 transition-opacity"
+          >
+            管理者ログイン
+          </button>
+        )}
       </div>
     </div>
   );

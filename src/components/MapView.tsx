@@ -6,6 +6,8 @@ import { ja } from 'date-fns/locale';
 import { useAppStore } from '../store/useAppStore';
 import { Package, COOL_LABELS } from '../types';
 
+const DEFAULT_CENTER: [number, number] = [35.6812, 139.7671];
+
 delete (L.Icon.Default.prototype as { _getIconUrl?: unknown })._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -49,32 +51,35 @@ const currentLocIcon = L.divIcon({
   iconAnchor: [7, 7],
 });
 
-function LocationController({ onLocation, triggerRef }: {
+function LocationController({ onLocation, triggerRef, isInitial }: {
   onLocation: (p: [number, number]) => void;
   triggerRef: React.MutableRefObject<(() => void) | null>;
+  isInitial: boolean;
 }) {
   const map = useMap();
-  const fly = () => {
+  const fly = (animate = true) => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const c: [number, number] = [pos.coords.latitude, pos.coords.longitude];
-        map.flyTo(c, 16, { duration: 1.2 });
+        if (animate) map.flyTo(c, 16, { duration: 1.2 });
+        else map.setView(c, 16);
         onLocation(c);
       },
-      () => alert('現在地の取得に失敗しました'),
+      () => { /* geolocation denied — stay at last known location */ },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
-  useEffect(() => { fly(); }, []);
-  triggerRef.current = fly;
+  useEffect(() => { fly(!isInitial); }, []);
+  triggerRef.current = () => fly(true);
   return null;
 }
 
 export default function MapView() {
-  const { selectedDate, setSelectedDate, getByDate, setDelivered } = useAppStore();
+  const { selectedDate, setSelectedDate, getByDate, setDelivered, lastLocation, setLastLocation } = useAppStore();
   const packages = getByDate(selectedDate);
-  const [currentPos, setCurrentPos] = useState<[number, number] | null>(null);
+  const [currentPos, setCurrentPos] = useState<[number, number] | null>(lastLocation);
   const locateTrigger = useRef<(() => void) | null>(null);
+  const isInitial = lastLocation === null;
   const headerRef = useRef<HTMLDivElement>(null);
   const [mapHeight, setMapHeight] = useState(500);
 
@@ -148,7 +153,7 @@ export default function MapView() {
 
       {/* Map */}
       <div style={{ height: mapHeight, position: 'relative' }}>
-        <MapContainer center={[35.6812, 139.7671]} zoom={15}
+        <MapContainer center={lastLocation ?? DEFAULT_CENTER} zoom={15}
           style={{ height: '100%', width: '100%' }}>
           {/* CartoDB Light tiles — エレガントな薄色マップ */}
           <TileLayer
@@ -156,7 +161,11 @@ export default function MapView() {
             url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
           />
 
-          <LocationController onLocation={setCurrentPos} triggerRef={locateTrigger} />
+          <LocationController
+            onLocation={(p) => { setCurrentPos(p); setLastLocation(p); }}
+            triggerRef={locateTrigger}
+            isInitial={isInitial}
+          />
 
           {currentPos && (
             <Marker position={currentPos} icon={currentLocIcon}>
