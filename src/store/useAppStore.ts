@@ -30,8 +30,8 @@ interface AppStore {
 
   // Packages
   packages: Package[];
-  addPackage: (pkg: Omit<Package, 'id' | 'routeOrder'>) => void;
-  updatePackage: (id: string, updates: Partial<Omit<Package, 'id'>>) => void;
+  addPackage: (pkg: Omit<Package, 'id' | 'routeOrder' | 'userId'>) => void;
+  updatePackage: (id: string, updates: Partial<Omit<Package, 'id' | 'userId'>>) => void;
   deletePackage: (id: string) => void;
   movePackage: (id: string, direction: 'up' | 'down') => void;
   setDelivered: (id: string, delivered: boolean) => void;
@@ -40,8 +40,9 @@ interface AppStore {
   lastLocation: [number, number] | null;
   setLastLocation: (loc: [number, number]) => void;
 
-  // Helpers
+  // Helpers — 全てログイン中ユーザーのデータのみ返す
   getByDate: (date: string) => Package[];
+  getAllForUser: () => Package[];
 }
 
 function today() {
@@ -53,7 +54,7 @@ export const useAppStore = create<AppStore>()(
     (set, get) => ({
       currentUser: null,
       users: [],
-      activeTab: 'map',
+      activeTab: 'home',
       selectedDate: today(),
       packages: [],
       adminId: 'admin',
@@ -63,7 +64,7 @@ export const useAppStore = create<AppStore>()(
 
       login: (name, pin) => {
         const user = get().users.find((u) => u.name === name && u.pin === pin);
-        if (user) { set({ currentUser: name }); return true; }
+        if (user) { set({ currentUser: name, activeTab: 'home' }); return true; }
         return false;
       },
 
@@ -74,12 +75,15 @@ export const useAppStore = create<AppStore>()(
         if (!/^\d{4}$/.test(pin)) return { ok: false, error: 'パスワードは4桁の数字で入力してください' };
         if (get().users.find((u) => u.name === name))
           return { ok: false, error: 'この名前はすでに登録されています' };
-        set((s) => ({ users: [...s.users, { name, pin }], currentUser: name }));
+        set((s) => ({ users: [...s.users, { name, pin }], currentUser: name, activeTab: 'home' }));
         return { ok: true };
       },
 
       deleteUser: (name) => {
-        set((s) => ({ users: s.users.filter((u) => u.name !== name) }));
+        set((s) => ({
+          users: s.users.filter((u) => u.name !== name),
+          packages: s.packages.filter((p) => p.userId !== name),
+        }));
       },
 
       adminLogin: (id, password) => {
@@ -99,11 +103,13 @@ export const useAppStore = create<AppStore>()(
       setLastLocation: (loc) => set({ lastLocation: loc }),
 
       addPackage: (pkg) => {
+        const userId = get().currentUser!;
         const date = pkg.date;
-        const existing = get().packages.filter((p) => p.date === date);
+        const existing = get().packages.filter((p) => p.date === date && p.userId === userId);
         const maxOrder = existing.length > 0 ? Math.max(...existing.map((p) => p.routeOrder)) : -1;
         const newPkg: Package = {
           ...pkg,
+          userId,
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           routeOrder: maxOrder + 1,
         };
@@ -125,7 +131,7 @@ export const useAppStore = create<AppStore>()(
         const pkg = state.packages.find((p) => p.id === id);
         if (!pkg) return;
         const dayPkgs = state.packages
-          .filter((p) => p.date === pkg.date)
+          .filter((p) => p.date === pkg.date && p.userId === pkg.userId)
           .sort((a, b) => a.routeOrder - b.routeOrder);
         const idx = dayPkgs.findIndex((p) => p.id === id);
         const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
@@ -147,9 +153,15 @@ export const useAppStore = create<AppStore>()(
       },
 
       getByDate: (date) => {
+        const userId = get().currentUser;
         return get()
-          .packages.filter((p) => p.date === date)
+          .packages.filter((p) => p.date === date && p.userId === userId)
           .sort((a, b) => a.routeOrder - b.routeOrder);
+      },
+
+      getAllForUser: () => {
+        const userId = get().currentUser;
+        return get().packages.filter((p) => p.userId === userId);
       },
     }),
     { name: 'haisha-map-v1' }

@@ -20,7 +20,7 @@ export default function PackageList() {
     collect: packages.filter(p => p.collect).length,
   };
 
-  const handleSave = (data: Omit<Package, 'id' | 'routeOrder'>) => {
+  const handleSave = (data: Omit<Package, 'id' | 'routeOrder' | 'userId'>) => {
     if (editTarget) updatePackage(editTarget.id, data);
     else addPackage(data);
     setShowModal(false); setEditTarget(undefined); setScannedCode(undefined);

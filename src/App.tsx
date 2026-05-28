@@ -8,6 +8,7 @@ import MapView from './components/MapView';
 import PackageList from './components/PackageList';
 import RouteManager from './components/RouteManager';
 import History from './components/History';
+import Home from './components/Home';
 import SplashScreen from './components/SplashScreen';
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-slate-50">
       <div className="flex-1 min-h-0 overflow-hidden">
+        {activeTab === 'home' && <Home />}
         {activeTab === 'map' && <MapView />}
         {activeTab === 'packages' && <PackageList />}
         {activeTab === 'route' && <RouteManager />}

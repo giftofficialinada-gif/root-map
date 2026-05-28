@@ -36,7 +36,7 @@ export default function AdminDashboard() {
       );
   }, [packages, searchQuery]);
 
-  const handleSave = (data: Omit<Package, 'id' | 'routeOrder'>) => {
+  const handleSave = (data: Omit<Package, 'id' | 'routeOrder' | 'userId'>) => {
     if (editTarget) updatePackage(editTarget.id, data);
     setShowModal(false);
     setEditTarget(undefined);

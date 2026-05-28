@@ -1,10 +1,11 @@
 export type CoolType = 'none' | 'refrigerated' | 'frozen';
 export type PackageSize = 60 | 80 | 100 | 120 | 140 | 160 | 180 | 200;
-export type TabType = 'map' | 'packages' | 'route' | 'history';
+export type TabType = 'home' | 'map' | 'packages' | 'route' | 'history';
 
 export interface Package {
   id: string;
-  date: string; // YYYY-MM-DD
+  userId: string;      // 所有者のユーザー名
+  date: string;        // YYYY-MM-DD
   customerName: string;
   address: string;
   size: PackageSize;

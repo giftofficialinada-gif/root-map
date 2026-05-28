@@ -5,7 +5,7 @@ interface Props {
   pkg?: Package;
   defaultDate: string;
   scannedCode?: string;
-  onSave: (data: Omit<Package, 'id' | 'routeOrder'>) => void;
+  onSave: (data: Omit<Package, 'id' | 'routeOrder' | 'userId'>) => void;
   onClose: () => void;
 }
 
