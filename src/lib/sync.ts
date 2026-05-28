@@ -73,8 +73,13 @@ export function subscribeToCloud(callback: (data: CloudData) => void): () => voi
         if (!raw) return;
 
         // オブジェクト → 配列に変換して返す
+        // 旧形式: {"0":{name,pin},"1":{name,pin}} / 新形式: {name:pin}
         const users: User[] = raw.users
-          ? Object.entries(raw.users).map(([name, pin]) => ({ name, pin }))
+          ? Object.entries(raw.users).map(([key, val]) =>
+              typeof val === 'string'
+                ? { name: key, pin: val }           // 新形式
+                : (val as unknown as User)           // 旧形式（Firebaseが配列をオブジェクト化）
+            )
           : [];
         const packages: Package[] = raw.packages
           ? Object.values(raw.packages)
