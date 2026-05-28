@@ -51,26 +51,26 @@ const currentLocIcon = L.divIcon({
   iconAnchor: [7, 7],
 });
 
-function LocationController({ onLocation, triggerRef, isInitial }: {
+function LocationController({ onLocation, onError, triggerRef }: {
   onLocation: (p: [number, number]) => void;
+  onError: () => void;
   triggerRef: React.MutableRefObject<(() => void) | null>;
-  isInitial: boolean;
 }) {
   const map = useMap();
-  const fly = (animate = true) => {
+  const fly = () => {
+    if (!navigator.geolocation) { onError(); return; }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const c: [number, number] = [pos.coords.latitude, pos.coords.longitude];
-        if (animate) map.flyTo(c, 16, { duration: 1.2 });
-        else map.setView(c, 16);
+        map.flyTo(c, 16, { duration: 1.0 });
         onLocation(c);
       },
-      () => { /* geolocation denied — stay at last known location */ },
+      () => onError(),
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
-  useEffect(() => { fly(!isInitial); }, []);
-  triggerRef.current = () => fly(true);
+  useEffect(() => { fly(); }, []);
+  triggerRef.current = fly;
   return null;
 }
 
@@ -78,8 +78,8 @@ export default function MapView() {
   const { selectedDate, setSelectedDate, getByDate, setDelivered, lastLocation, setLastLocation } = useAppStore();
   const packages = getByDate(selectedDate);
   const [currentPos, setCurrentPos] = useState<[number, number] | null>(lastLocation);
+  const [locError, setLocError] = useState(false);
   const locateTrigger = useRef<(() => void) | null>(null);
-  const isInitial = lastLocation === null;
   const headerRef = useRef<HTMLDivElement>(null);
   const [mapHeight, setMapHeight] = useState(500);
 
@@ -131,10 +131,10 @@ export default function MapView() {
               style={{ border: '1px solid var(--border)', background: 'var(--washi)', color: 'var(--ink)', fontFamily: 'var(--font-sans)', fontSize: 12, borderRadius: 8 }}
               className="px-2 py-1 outline-none"
             />
-            <button onClick={() => locateTrigger.current?.()}
-              style={{ background: 'var(--accent)', color: '#fff', fontFamily: 'var(--font-sans)', fontSize: 12, borderRadius: 20 }}
+            <button onClick={() => { setLocError(false); locateTrigger.current?.(); }}
+              style={{ background: locError ? 'var(--ink-muted)' : 'var(--accent)', color: '#fff', fontFamily: 'var(--font-sans)', fontSize: 12, borderRadius: 20 }}
               className="flex items-center gap-1 px-3 py-1.5 font-medium whitespace-nowrap">
-              📍現在地
+              📍{locError ? '許可が必要' : '現在地'}
             </button>
           </div>
         </div>
@@ -162,9 +162,9 @@ export default function MapView() {
           />
 
           <LocationController
-            onLocation={(p) => { setCurrentPos(p); setLastLocation(p); }}
+            onLocation={(p) => { setCurrentPos(p); setLastLocation(p); setLocError(false); }}
+            onError={() => setLocError(true)}
             triggerRef={locateTrigger}
-            isInitial={isInitial}
           />
 
           {currentPos && (
