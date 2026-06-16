@@ -127,7 +127,12 @@ function PackageCard({ pkg, routeNo, onEdit, onDelete, onToggle }: {
         </div>
         <p style={{ color: 'var(--ink-muted)', fontSize: 12, fontFamily: 'var(--font-sans)' }} className="truncate mt-0.5">{pkg.address}</p>
         <div className="flex flex-wrap gap-1 mt-1.5">
-          {pkg.nekoposu ? <Chip color="var(--ink)">ネコポス</Chip> : <Chip>{pkg.size}s</Chip>}
+          {pkg.nekoposu
+            ? <Chip color="var(--ink)">ネコポス</Chip>
+            : pkg.kogire
+              ? <><Chip color="#6B7280">小物</Chip><Chip>{pkg.size}s</Chip></>
+              : <Chip>{pkg.size}s</Chip>
+          }
           {pkg.cool !== 'none' && <Chip color={pkg.cool === 'frozen' ? 'var(--frozen)' : 'var(--cool)'}>{COOL_LABELS[pkg.cool]}</Chip>}
           {pkg.collect && <Chip color="var(--accent)">コレクト{pkg.collectAmount ? ` ¥${pkg.collectAmount.toLocaleString()}` : ''}</Chip>}
           {pkg.cashOnDelivery && <Chip color="#555">着払い{pkg.cashOnDeliveryAmount ? ` ¥${pkg.cashOnDeliveryAmount.toLocaleString()}` : ''}</Chip>}

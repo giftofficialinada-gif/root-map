@@ -123,7 +123,7 @@ export default function RouteManager() {
           <div className="flex flex-wrap gap-1.5">
             {Object.entries(
               packages.reduce<Record<string, number>>((a, p) => {
-                const key = p.nekoposu ? 'ネコポス' : `${p.size}s`;
+                const key = p.nekoposu ? 'ネコポス' : p.kogire ? `小物${p.size}s` : `${p.size}s`;
                 return { ...a, [key]: (a[key] ?? 0) + 1 };
               }, {})
             ).sort(([a], [b]) => a.localeCompare(b)).map(([s, c]) => (
@@ -197,7 +197,9 @@ function RouteItem({ pkg, routeNo, isFirst, isLast, onUp, onDown, onToggle }: {
         <div className="flex gap-2 mt-0.5 flex-wrap">
           {pkg.nekoposu
             ? <span style={{ fontSize: 10, color: 'var(--ink)', fontFamily: 'var(--font-sans)' }}>ネコポス</span>
-            : <span style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)' }}>{pkg.size}s</span>
+            : pkg.kogire
+              ? <><span style={{ fontSize: 10, color: '#6B7280', fontFamily: 'var(--font-sans)' }}>小物</span><span style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)' }}> {pkg.size}s</span></>
+              : <span style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)' }}>{pkg.size}s</span>
           }
           {pkg.cool !== 'none' && <span style={{ fontSize: 10, color: pkg.cool === 'frozen' ? 'var(--frozen)' : 'var(--cool)', fontFamily: 'var(--font-sans)' }}>{COOL_LABELS[pkg.cool]}</span>}
           {pkg.collect && <span style={{ fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--font-sans)' }}>コレクト{pkg.collectAmount ? ` ¥${pkg.collectAmount.toLocaleString()}` : ''}</span>}

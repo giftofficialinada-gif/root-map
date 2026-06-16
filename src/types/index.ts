@@ -12,6 +12,7 @@ export interface Package {
   size: PackageSize;
   cool: CoolType;
   nekoposu: boolean;
+  kogire: boolean;
   collect: boolean;
   collectAmount?: number;
   cashOnDelivery: boolean;

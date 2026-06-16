@@ -54,6 +54,7 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
   const [size, setSize] = useState<PackageSize>(pkg?.size ?? 60);
   const [cool, setCool] = useState<CoolType>(pkg?.cool ?? 'none');
   const [nekoposu, setNekoposu] = useState(pkg?.nekoposu ?? false);
+  const [kogire, setKogire] = useState(pkg?.kogire ?? false);
   const [collect, setCollect] = useState(pkg?.collect ?? false);
   const [collectAmount, setCollectAmount] = useState(pkg?.collectAmount?.toString() ?? '');
   const [cashOnDelivery, setCashOnDelivery] = useState(pkg?.cashOnDelivery ?? false);
@@ -142,7 +143,7 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
     if (!address.trim()) { setError('住所を入力してください'); return; }
     onSave({
       customerName: customerName.trim(), address: address.trim(), size, cool,
-      nekoposu,
+      nekoposu, kogire,
       collect, collectAmount: collect && collectAmount ? parseInt(collectAmount, 10) : undefined,
       cashOnDelivery, cashOnDeliveryAmount: cashOnDelivery && cashOnDeliveryAmount ? parseInt(cashOnDeliveryAmount, 10) : undefined,
       timeSlot: timeSlot || undefined,
@@ -257,21 +258,39 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
 
           <Field label="サイズ">
             <div className="p-2 space-y-2">
+              {/* ネコポス：サイズ選択不要なサービス */}
               <label className="flex items-center gap-3 cursor-pointer pb-2" style={{ borderBottom: '1px solid var(--border)' }}>
-                <div onClick={() => setNekoposu(!nekoposu)}
+                <div onClick={() => { setNekoposu(!nekoposu); if (!nekoposu) setKogire(false); }}
                   style={{ width: 44, height: 24, borderRadius: 12, background: nekoposu ? 'var(--ink)' : 'var(--border)', padding: '3px', display: 'flex', alignItems: 'center', transition: 'background 0.2s', flexShrink: 0 }}>
                   <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: nekoposu ? 'translateX(20px)' : 'none', transition: 'transform 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
                 </div>
-                <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink)', fontSize: 14 }}>ネコポス</span>
+                <div>
+                  <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink)', fontSize: 14 }}>ネコポス</span>
+                  <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink-muted)', fontSize: 11, marginLeft: 6 }}>（サイズ選択なし）</span>
+                </div>
               </label>
-              <div className="grid grid-cols-4 gap-1.5" style={{ opacity: nekoposu ? 0.4 : 1 }}>
+              {/* 小物：サイズ選択も併用可 */}
+              <label className="flex items-center gap-3 cursor-pointer pb-2" style={{ borderBottom: '1px solid var(--border)' }}>
+                <div onClick={() => { setKogire(!kogire); if (!kogire) setNekoposu(false); }}
+                  style={{ width: 44, height: 24, borderRadius: 12, background: kogire ? '#6B7280' : 'var(--border)', padding: '3px', display: 'flex', alignItems: 'center', transition: 'background 0.2s', flexShrink: 0 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: kogire ? 'translateX(20px)' : 'none', transition: 'transform 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                </div>
+                <div>
+                  <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink)', fontSize: 14 }}>小物</span>
+                  <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink-muted)', fontSize: 11, marginLeft: 6 }}>（サイズも選択可）</span>
+                </div>
+              </label>
+              {/* サイズボタン：ネコポスの時だけグレーアウト、小物でも選択可 */}
+              <div className="grid grid-cols-4 gap-1.5" style={{ opacity: nekoposu ? 0.3 : 1 }}>
                 {PACKAGE_SIZES.map((s) => (
-                  <button key={s} type="button" onClick={() => { setSize(s); setNekoposu(false); }}
+                  <button key={s} type="button"
+                    disabled={nekoposu}
+                    onClick={() => setSize(s)}
                     style={{
                       borderRadius: 8, fontSize: 12, padding: '6px 0', fontFamily: 'var(--font-mono)',
-                      background: !nekoposu && size === s ? 'var(--ink)' : 'transparent',
+                      background: !nekoposu && size === s ? (kogire ? '#6B7280' : 'var(--ink)') : 'transparent',
                       color: !nekoposu && size === s ? '#fff' : 'var(--ink-muted)',
-                      border: `1px solid ${!nekoposu && size === s ? 'var(--ink)' : 'var(--border)'}`,
+                      border: `1px solid ${!nekoposu && size === s ? (kogire ? '#6B7280' : 'var(--ink)') : 'var(--border)'}`,
                     }}>
                     {s}
                   </button>

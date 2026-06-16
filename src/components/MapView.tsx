@@ -397,7 +397,12 @@ function PackagePopup({ pkg, routeNo, onDelivered }: {
       </div>
       <p style={{ color: 'var(--ink-muted)', fontSize: 11 }} className="mb-2">{pkg.address}</p>
       <div className="flex flex-wrap gap-1 mb-3">
-        {pkg.nekoposu ? <Tag>ネコポス</Tag> : <Tag>{pkg.size}s</Tag>}
+        {pkg.nekoposu
+          ? <Tag>ネコポス</Tag>
+          : pkg.kogire
+            ? <><Tag accent="#6B7280">小物</Tag><Tag>{pkg.size}s</Tag></>
+            : <Tag>{pkg.size}s</Tag>
+        }
         {pkg.cool !== 'none' && <Tag accent={pkg.cool === 'frozen' ? 'var(--frozen)' : 'var(--cool)'}>{COOL_LABELS[pkg.cool]}</Tag>}
         {pkg.collect && <Tag accent="var(--accent)">コレクト{pkg.collectAmount ? ` ¥${pkg.collectAmount.toLocaleString()}` : ''}</Tag>}
         {pkg.cashOnDelivery && <Tag accent="#555">着払い{pkg.cashOnDeliveryAmount ? ` ¥${pkg.cashOnDeliveryAmount.toLocaleString()}` : ''}</Tag>}
