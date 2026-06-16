@@ -87,6 +87,25 @@ function clusterPackages(pkgs: Package[]): { center: [number, number]; packages:
   return clusters;
 }
 
+// ~400m threshold in degrees (at lat 35°, 0.004° ≈ 440m)
+const OFF_ROUTE_THRESHOLD = 0.004;
+
+function distToSegmentSq(p: [number, number], a: [number, number], b: [number, number]): number {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  if (dx === 0 && dy === 0) return (p[0]-a[0])**2 + (p[1]-a[1])**2;
+  const t = Math.max(0, Math.min(1, ((p[0]-a[0])*dx + (p[1]-a[1])*dy) / (dx*dx+dy*dy)));
+  return (p[0]-a[0]-t*dx)**2 + (p[1]-a[1]-t*dy)**2;
+}
+
+function checkOffRoute(pos: [number, number], route: [number, number][]): boolean {
+  if (route.length === 0) return false;
+  let minD2 = (pos[0]-route[0][0])**2 + (pos[1]-route[0][1])**2;
+  for (let i = 0; i < route.length - 1; i++) {
+    minD2 = Math.min(minD2, distToSegmentSq(pos, route[i], route[i+1]));
+  }
+  return Math.sqrt(minD2) > OFF_ROUTE_THRESHOLD;
+}
+
 const currentLocIcon = L.divIcon({
   html: `<div style="width:14px;height:14px;border-radius:50%;background:var(--accent);border:3px solid white;box-shadow:0 0 0 3px rgba(194,90,42,0.3);"></div>`,
   className: '',
@@ -100,28 +119,45 @@ function LocationController({ onLocation, onError, triggerRef }: {
   triggerRef: React.MutableRefObject<(() => void) | null>;
 }) {
   const map = useMap();
-  const fly = () => {
-    if (!navigator.geolocation) { onError(); return; }
-    navigator.geolocation.getCurrentPosition(
+  const onLocationRef = useRef(onLocation);
+  const onErrorRef = useRef(onError);
+  const lastPosRef = useRef<[number, number] | null>(null);
+
+  useEffect(() => { onLocationRef.current = onLocation; }, [onLocation]);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+
+  useEffect(() => {
+    if (!navigator.geolocation) { onErrorRef.current(); return; }
+    let firstFix = true;
+    const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const c: [number, number] = [pos.coords.latitude, pos.coords.longitude];
-        map.flyTo(c, 16, { duration: 1.0 });
-        onLocation(c);
+        lastPosRef.current = c;
+        if (firstFix) {
+          map.flyTo(c, 16, { duration: 1.0 });
+          firstFix = false;
+        }
+        onLocationRef.current(c);
       },
-      () => onError(),
-      { enableHighAccuracy: true, timeout: 10000 }
+      () => onErrorRef.current(),
+      { enableHighAccuracy: true, maximumAge: 5000 }
     );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [map]);
+
+  triggerRef.current = () => {
+    if (lastPosRef.current) map.flyTo(lastPosRef.current, 16, { duration: 1.0 });
   };
-  useEffect(() => { fly(); }, []);
-  triggerRef.current = fly;
   return null;
 }
 
 export default function MapView() {
-  const { selectedDate, setSelectedDate, getByDate, setDelivered, lastLocation, setLastLocation } = useAppStore();
+  const { selectedDate, setSelectedDate, getByDate, setDelivered, lastLocation, setLastLocation, autoRoutePackages } = useAppStore();
   const packages = getByDate(selectedDate);
   const [currentPos, setCurrentPos] = useState<[number, number] | null>(lastLocation);
   const [locError, setLocError] = useState(false);
+  const [offRoute, setOffRoute] = useState(false);
+  const [rerouteLoading, setRerouteLoading] = useState(false);
   const locateTrigger = useRef<(() => void) | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [mapHeight, setMapHeight] = useState(500);
@@ -144,6 +180,34 @@ export default function MapView() {
   const positioned = useMemo(() => packages.filter(p => p.lat !== undefined && p.lng !== undefined), [packages]);
   const routePoints = useMemo(() => positioned.map(p => [p.lat!, p.lng!] as [number, number]), [positioned]);
   const clusters = useMemo(() => clusterPackages(positioned), [positioned]);
+
+  // Undelivered route for off-route detection
+  const undeliveredRoute = useMemo(() =>
+    positioned.filter(p => !p.delivered).map(p => [p.lat!, p.lng!] as [number, number]),
+    [positioned]
+  );
+  const undeliveredRouteRef = useRef(undeliveredRoute);
+  useEffect(() => { undeliveredRouteRef.current = undeliveredRoute; }, [undeliveredRoute]);
+
+  // Off-route detection whenever position updates
+  useEffect(() => {
+    if (!currentPos || undeliveredRoute.length < 2) { setOffRoute(false); return; }
+    setOffRoute(checkOffRoute(currentPos, undeliveredRoute));
+  }, [currentPos, undeliveredRoute]);
+
+  const handleLocation = (p: [number, number]) => {
+    setCurrentPos(p);
+    setLastLocation(p);
+    setLocError(false);
+  };
+
+  const handleReroute = async () => {
+    if (!currentPos) return;
+    setRerouteLoading(true);
+    await autoRoutePackages(selectedDate, currentPos);
+    setRerouteLoading(false);
+    setOffRoute(false);
+  };
 
   // Date formatting
   const dateObj = parseISO(selectedDate);
@@ -206,7 +270,7 @@ export default function MapView() {
           />
 
           <LocationController
-            onLocation={(p) => { setCurrentPos(p); setLastLocation(p); setLocError(false); }}
+            onLocation={handleLocation}
             onError={() => setLocError(true)}
             triggerRef={locateTrigger}
           />
@@ -254,6 +318,27 @@ export default function MapView() {
             );
           })}
         </MapContainer>
+
+        {/* Off-route re-route banner */}
+        {(offRoute || rerouteLoading) && (
+          <div style={{
+            position: 'absolute', bottom: 16, left: 12, right: 12, zIndex: 1000,
+            background: rerouteLoading ? 'var(--ink)' : '#c25a2a',
+            color: '#fff', borderRadius: 14, padding: '10px 14px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.35)',
+          }}>
+            <span style={{ fontFamily: 'var(--font-sans)', fontSize: 13 }}>
+              {rerouteLoading ? '🔄 再ルート計算中…' : '📍 ルートを外れました'}
+            </span>
+            {!rerouteLoading && (
+              <button onClick={handleReroute}
+                style={{ background: '#fff', color: '#c25a2a', borderRadius: 20, padding: '5px 14px', fontSize: 12, fontFamily: 'var(--font-sans)', fontWeight: 700, border: 'none', cursor: 'pointer' }}>
+                再ルート検索
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Legend overlay */}
         <div style={{ background: 'rgba(254,252,248,0.92)', border: '1px solid var(--border)', borderRadius: 10 }}

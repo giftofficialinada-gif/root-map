@@ -36,7 +36,7 @@ interface AppStore {
   deletePackage: (id: string) => void;
   movePackage: (id: string, direction: 'up' | 'down') => void;
   setDelivered: (id: string, delivered: boolean) => void;
-  autoRoutePackages: (date: string) => void;
+  autoRoutePackages: (date: string, startCoords?: [number, number]) => Promise<void>;
 
   // Cloud sync
   applyCloudData: (data: { adminId: string; adminPassword: string; users: User[]; packages: Package[] }) => void;
@@ -196,60 +196,117 @@ export const useAppStore = create<AppStore>()(
         });
       },
 
-      autoRoutePackages: (date: string) => {
+      autoRoutePackages: async (date: string, startCoords?: [number, number]) => {
         const state = get();
         const userId = state.currentUser;
         const allDayPkgs = state.packages.filter(p => p.date === date && p.userId === userId);
-        const withCoords = allDayPkgs.filter(p => p.lat !== undefined && p.lng !== undefined);
-        const withoutCoords = allDayPkgs.filter(p => p.lat === undefined || p.lng === undefined);
-        if (withCoords.length < 2) return;
 
-        const dist = (a: Package, b: Package) => {
-          const dlat = a.lat! - b.lat!;
-          const dlng = a.lng! - b.lng!;
-          return dlat * dlat + dlng * dlng;
+        // Re-routing from current position: only reorder undelivered packages
+        const pkgsToRoute = startCoords ? allDayPkgs.filter(p => !p.delivered) : allDayPkgs;
+        const withCoords = pkgsToRoute.filter(p => p.lat !== undefined && p.lng !== undefined);
+        const withoutCoords = pkgsToRoute.filter(p => p.lat === undefined || p.lng === undefined);
+        if (withCoords.length === 0) return;
+
+        // Build coordinate list: [startCoords?, ...withCoords]
+        // OSRM uses lng,lat order
+        const osrmPoints: [number, number][] = [
+          ...(startCoords ? [startCoords] : []),
+          ...withCoords.map(p => [p.lat!, p.lng!] as [number, number]),
+        ];
+        const offset = startCoords ? 1 : 0;
+        const pkgMatrixIdx = new Map(withCoords.map((p, i) => [p.id, i + offset]));
+
+        // Try OSRM table API for real driving durations (handles one-way streets, etc.)
+        let durations: number[][] | null = null;
+        if (osrmPoints.length >= 2) {
+          try {
+            const coordStr = osrmPoints.map(([lat, lng]) => `${lng.toFixed(6)},${lat.toFixed(6)}`).join(';');
+            const controller = new AbortController();
+            const tid = setTimeout(() => controller.abort(), 8000);
+            const res = await fetch(
+              `https://router.project-osrm.org/table/v1/driving/${coordStr}?annotations=duration`,
+              { signal: controller.signal }
+            );
+            clearTimeout(tid);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.code === 'Ok') durations = data.durations;
+            }
+          } catch { /* fall back to Euclidean */ }
+        }
+
+        const getDist = (fromIdx: number, toIdx: number): number => {
+          if (durations) return durations[fromIdx]?.[toIdx] ?? Infinity;
+          const [aLat, aLng] = osrmPoints[fromIdx];
+          const [bLat, bLng] = osrmPoints[toIdx];
+          return (aLat - bLat) ** 2 + (aLng - bLng) ** 2;
         };
 
-        const nearestNeighbor = (startPkg: Package | null, pkgs: Package[]): Package[] => {
-          if (pkgs.length === 0) return [];
-          const remaining = [...pkgs];
+        const nearestNeighbor = (startIdx: number | null, group: Package[]): { ordered: Package[]; lastIdx: number } => {
+          if (group.length === 0) return { ordered: [], lastIdx: startIdx ?? 0 };
+          const remaining = [...group];
           const result: Package[] = [];
-          let current: Package;
-          if (!startPkg) { current = remaining.shift()!; result.push(current); }
-          else { current = startPkg; }
-          while (remaining.length > 0) {
-            let ni = 0, minD = dist(current, remaining[0]);
-            for (let i = 1; i < remaining.length; i++) {
-              const d = dist(current, remaining[i]);
-              if (d < minD) { minD = d; ni = i; }
-            }
-            current = remaining.splice(ni, 1)[0];
-            result.push(current);
+          let currentIdx: number;
+          if (startIdx === null) {
+            const first = remaining.shift()!;
+            result.push(first);
+            currentIdx = pkgMatrixIdx.get(first.id)!;
+          } else {
+            currentIdx = startIdx;
           }
-          return result;
+          while (remaining.length > 0) {
+            let bestI = 0, bestD = getDist(currentIdx, pkgMatrixIdx.get(remaining[0].id)!);
+            for (let i = 1; i < remaining.length; i++) {
+              const d = getDist(currentIdx, pkgMatrixIdx.get(remaining[i].id)!);
+              if (d < bestD) { bestD = d; bestI = i; }
+            }
+            const next = remaining.splice(bestI, 1)[0];
+            result.push(next);
+            currentIdx = pkgMatrixIdx.get(next.id)!;
+          }
+          return { ordered: result, lastIdx: currentIdx };
         };
 
         const slotGroups: (TimeSlot | undefined)[] = [...TIME_SLOT_ORDER, undefined];
         const ordered: Package[] = [];
+        let lastIdx: number | null = startCoords ? 0 : null;
         for (const slot of slotGroups) {
           const group = slot !== undefined
             ? withCoords.filter(p => p.timeSlot === slot)
             : withCoords.filter(p => !p.timeSlot);
           if (group.length === 0) continue;
-          const last = ordered.length > 0 ? ordered[ordered.length - 1] : null;
-          ordered.push(...nearestNeighbor(last, group));
+          const result = nearestNeighbor(lastIdx, group);
+          ordered.push(...result.ordered);
+          lastIdx = result.lastIdx;
         }
 
         const finalOrder = [...ordered, ...withoutCoords.sort((a, b) => a.routeOrder - b.routeOrder)];
-        set(s => {
-          const packages = s.packages.map(p => {
-            if (p.date !== date || p.userId !== userId) return p;
-            const idx = finalOrder.findIndex(fp => fp.id === p.id);
-            return idx >= 0 ? { ...p, routeOrder: idx } : p;
+        if (finalOrder.length === 0) return;
+
+        if (startCoords) {
+          // Re-routing: keep delivered packages' routeOrder, place undelivered after them
+          const maxDeliveredOrder = allDayPkgs.filter(p => p.delivered).reduce((m, p) => Math.max(m, p.routeOrder), -1);
+          const base = maxDeliveredOrder + 1;
+          set(s => {
+            const packages = s.packages.map(p => {
+              if (p.date !== date || p.userId !== userId || p.delivered) return p;
+              const idx = finalOrder.findIndex(fp => fp.id === p.id);
+              return idx >= 0 ? { ...p, routeOrder: base + idx } : p;
+            });
+            cloudSync({ ...s, packages });
+            return { packages };
           });
-          cloudSync({ ...s, packages });
-          return { packages };
-        });
+        } else {
+          set(s => {
+            const packages = s.packages.map(p => {
+              if (p.date !== date || p.userId !== userId) return p;
+              const idx = finalOrder.findIndex(fp => fp.id === p.id);
+              return idx >= 0 ? { ...p, routeOrder: idx } : p;
+            });
+            cloudSync({ ...s, packages });
+            return { packages };
+          });
+        }
       },
 
       getByDate: (date) => {

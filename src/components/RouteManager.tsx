@@ -16,12 +16,10 @@ export default function RouteManager() {
     ? packages
     : packages.filter(p => p.timeSlot === slotFilter);
 
-  const handleAutoRoute = () => {
+  const handleAutoRoute = async () => {
     setAutoRouting(true);
-    setTimeout(() => {
-      autoRoutePackages(selectedDate);
-      setAutoRouting(false);
-    }, 0);
+    await autoRoutePackages(selectedDate);
+    setAutoRouting(false);
   };
 
   const copyRoute = () => {
@@ -58,7 +56,7 @@ export default function RouteManager() {
               background: hasGeocodedPkgs ? 'var(--ink)' : 'var(--border)',
               color: '#fff', border: 'none', cursor: hasGeocodedPkgs ? 'pointer' : 'not-allowed', opacity: autoRouting ? 0.7 : 1,
             }}>
-            {autoRouting ? '計算中…' : hasGeocodedPkgs ? '✦ 自動ルート（時間帯 → 最短距離）' : '📍 座標未取得のため自動ルート不可'}
+            {autoRouting ? '🔄 道路ネットワークで計算中…' : hasGeocodedPkgs ? '✦ 自動ルート（車道・時間帯優先）' : '📍 座標未取得のため自動ルート不可'}
           </button>
         )}
 
