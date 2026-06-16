@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Package, PACKAGE_SIZES, CoolType, PackageSize, COOL_LABELS } from '../types';
+import { useAppStore } from '../store/useAppStore';
 
 interface Props {
   pkg?: Package;
@@ -29,9 +30,27 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lng: numb
   return null;
 }
 
+async function lookupZip(zip: string): Promise<string | null> {
+  const digits = zip.replace(/\D/g, '');
+  if (digits.length !== 7) return null;
+  try {
+    const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`);
+    const data = await res.json();
+    if (data.results?.[0]) {
+      const r = data.results[0];
+      return `${r.address1}${r.address2}${r.address3}`;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
 export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, onClose }: Props) {
+  const { getAllForUser } = useAppStore();
+
   const [customerName, setCustomerName] = useState(pkg?.customerName ?? '');
   const [address, setAddress] = useState(pkg?.address ?? '');
+  const [zip, setZip] = useState('');
+  const [zipStatus, setZipStatus] = useState<'idle' | 'loading' | 'ok' | 'notfound'>('idle');
   const [size, setSize] = useState<PackageSize>(pkg?.size ?? 60);
   const [cool, setCool] = useState<CoolType>(pkg?.cool ?? 'none');
   const [collect, setCollect] = useState(pkg?.collect ?? false);
@@ -43,8 +62,59 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
   const [geocoding, setGeocoding] = useState(false);
   const [geocodeStatus, setGeocodeStatus] = useState<'idle' | 'ok' | 'fail'>('idle');
   const [error, setError] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const addressRef = useRef<HTMLInputElement>(null);
+  const suggRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { if (pkg?.lat) setGeocodeStatus('ok'); }, [pkg]);
+
+  // 過去の顧客一覧（重複除去・最新順）
+  const pastCustomers = useMemo(() => {
+    const all = getAllForUser();
+    const seen = new Set<string>();
+    const result: { customerName: string; address: string }[] = [];
+    for (const p of [...all].sort((a, b) => b.date.localeCompare(a.date))) {
+      if (!seen.has(p.customerName)) {
+        seen.add(p.customerName);
+        result.push({ customerName: p.customerName, address: p.address });
+      }
+    }
+    return result;
+  }, []);
+
+  // 名前入力に合わせた候補絞り込み
+  const suggestions = useMemo(() => {
+    if (!customerName.trim()) return pastCustomers.slice(0, 5);
+    const q = customerName.toLowerCase();
+    return pastCustomers.filter(c =>
+      c.customerName.toLowerCase().includes(q) ||
+      c.address.toLowerCase().includes(q)
+    ).slice(0, 6);
+  }, [customerName, pastCustomers]);
+
+  // 郵便番号が7桁になったら自動検索
+  useEffect(() => {
+    const digits = zip.replace(/\D/g, '');
+    if (digits.length !== 7) { if (zipStatus === 'ok') setZipStatus('idle'); return; }
+    setZipStatus('loading');
+    lookupZip(digits).then((result) => {
+      if (result) {
+        setAddress(result);
+        setZipStatus('ok');
+        setGeocodeStatus('idle');
+        // フォーカスを住所欄に移して番地を続けて入力できるように
+        setTimeout(() => {
+          if (addressRef.current) {
+            addressRef.current.focus();
+            const len = addressRef.current.value.length;
+            addressRef.current.setSelectionRange(len, len);
+          }
+        }, 50);
+      } else {
+        setZipStatus('notfound');
+      }
+    });
+  }, [zip]);
 
   const handleGeocode = async () => {
     if (!address.trim()) return;
@@ -53,6 +123,13 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
     setGeocoding(false);
     if (r) { setLat(r.lat); setLng(r.lng); setGeocodeStatus('ok'); }
     else setGeocodeStatus('fail');
+  };
+
+  const applySuggestion = (s: { customerName: string; address: string }) => {
+    setCustomerName(s.customerName);
+    setAddress(s.address);
+    setShowSuggestions(false);
+    setGeocodeStatus('idle');
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -73,37 +150,97 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
   return (
     <div style={{ background: 'rgba(28,25,23,0.4)' }}
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
-      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); setShowSuggestions(false); }}>
       <div style={{ background: 'var(--surface)', borderTop: '1px solid var(--border)' }}
         className="rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
 
         {/* Header */}
-        <div style={{ borderBottom: '1px solid var(--border)' }} className="flex items-center justify-between px-5 py-4 sticky top-0"
-          // @ts-ignore
-          style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }}
+          className="flex items-center justify-between px-5 py-4 sticky top-0 z-10">
           <h2 style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 18 }} className="font-bold">
             {pkg ? '荷物を編集' : '荷物を追加'}
           </h2>
-          <button onClick={onClose} style={{ color: 'var(--ink-muted)', fontSize: 22, lineHeight: 1 }}>×</button>
+          <button onClick={onClose} style={{ color: 'var(--ink-muted)', fontSize: 22, lineHeight: 1, background: 'transparent' }}>×</button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 space-y-5">
           <Field label="配達日">
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inp} />
           </Field>
-          <Field label="お客様名">
-            <input type="text" value={customerName} onChange={(e) => setCustomerName(e.target.value)}
-              placeholder="例：田中 花子" className={inp} />
-          </Field>
-          <Field label="住所">
+
+          {/* お客様名（履歴候補付き） */}
+          <div style={{ position: 'relative' }}>
+            <label style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', fontSize: 11, letterSpacing: '0.1em' }}
+              className="block mb-1.5 uppercase">お客様名</label>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--washi)' }}>
+              <input
+                type="text"
+                value={customerName}
+                onChange={(e) => { setCustomerName(e.target.value); setShowSuggestions(true); }}
+                onFocus={() => setShowSuggestions(true)}
+                placeholder="例：田中 花子"
+                className={inp}
+                autoComplete="off"
+              />
+            </div>
+
+            {/* サジェストドロップダウン */}
+            {showSuggestions && suggestions.length > 0 && (
+              <div ref={suggRef}
+                style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 4px 16px rgba(28,25,23,0.12)', marginTop: 4 }}>
+                {customerName.trim() === '' && (
+                  <div style={{ padding: '8px 14px 4px', fontFamily: 'var(--font-sans)', color: 'var(--ink-muted)', fontSize: 10, letterSpacing: '0.1em' }}>
+                    最近のお客様
+                  </div>
+                )}
+                {suggestions.map((s, i) => (
+                  <button key={i} type="button"
+                    onMouseDown={() => applySuggestion(s)}
+                    style={{ width: '100%', textAlign: 'left', padding: '9px 14px', background: 'transparent', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>
+                    <p style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 14, fontWeight: 600 }}>{s.customerName}</p>
+                    <p style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink-muted)', fontSize: 11 }} className="truncate">{s.address}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 郵便番号 */}
+          <div>
+            <label style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', fontSize: 11, letterSpacing: '0.1em' }}
+              className="block mb-1.5 uppercase">郵便番号（住所自動補完）</label>
+            <div style={{ border: `1px solid ${zipStatus === 'ok' ? 'var(--delivered)' : 'var(--border)'}`, borderRadius: 12, background: 'var(--washi)', display: 'flex', alignItems: 'center' }}>
+              <span style={{ paddingLeft: 14, color: 'var(--ink-muted)', fontSize: 13, flexShrink: 0 }}>〒</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={zip}
+                onChange={(e) => setZip(e.target.value)}
+                placeholder="1234567"
+                maxLength={8}
+                style={{ flex: 1, background: 'transparent', outline: 'none', fontFamily: 'var(--font-mono)', fontSize: 15, color: 'var(--ink)', padding: '10px 12px', letterSpacing: '0.1em' }}
+              />
+              <span style={{ paddingRight: 12, fontSize: 11, fontFamily: 'var(--font-sans)', color: zipStatus === 'ok' ? 'var(--delivered)' : zipStatus === 'notfound' ? 'var(--accent)' : 'var(--ink-muted)', flexShrink: 0 }}>
+                {zipStatus === 'loading' ? '検索中…' : zipStatus === 'ok' ? '✓補完済' : zipStatus === 'notfound' ? '見つからず' : '7桁入力で自動補完'}
+              </span>
+            </div>
+          </div>
+
+          {/* 住所（番地を追加） */}
+          <Field label="住所（番地まで入力）">
             <div className="flex gap-2">
-              <input type="text" value={address}
+              <input
+                ref={addressRef}
+                type="text"
+                value={address}
                 onChange={(e) => { setAddress(e.target.value); setGeocodeStatus('idle'); }}
-                placeholder="例：名古屋市南区豊田1-7-17" className={`${inp} flex-1`} />
+                placeholder="例：名古屋市南区豊田1-7-17"
+                className={`${inp} flex-1`}
+              />
               <button type="button" onClick={handleGeocode} disabled={geocoding || !address.trim()}
-                style={{ background: geocodeStatus === 'ok' ? 'var(--delivered)' : 'var(--accent)', color: '#fff', borderRadius: 10, fontSize: 12 }}
+                style={{ background: geocodeStatus === 'ok' ? 'var(--delivered)' : 'var(--accent)', color: '#fff', borderRadius: 10, fontSize: 12, flexShrink: 0 }}
                 className="px-3 py-2 font-medium disabled:opacity-40 whitespace-nowrap">
-                {geocoding ? '取得中…' : geocodeStatus === 'ok' ? '✓取得済' : '📍取得'}
+                {geocoding ? '…' : geocodeStatus === 'ok' ? '✓取得済' : '📍取得'}
               </button>
             </div>
             {geocodeStatus === 'fail' && (
@@ -112,7 +249,7 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
           </Field>
 
           <Field label="サイズ">
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5 p-2">
               {PACKAGE_SIZES.map((s) => (
                 <button key={s} type="button" onClick={() => setSize(s)}
                   style={{
@@ -128,7 +265,7 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
           </Field>
 
           <Field label="クール">
-            <div className="flex gap-2">
+            <div className="flex gap-2 p-2">
               {(['none', 'refrigerated', 'frozen'] as CoolType[]).map((c) => (
                 <button key={c} type="button" onClick={() => setCool(c)}
                   style={{
@@ -146,7 +283,7 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
           <div>
             <label className="flex items-center gap-3 cursor-pointer">
               <div onClick={() => setCollect(!collect)}
-                style={{ width: 44, height: 24, borderRadius: 12, background: collect ? 'var(--accent)' : 'var(--border)', padding: '3px', display: 'flex', alignItems: 'center', transition: 'background 0.2s' }}>
+                style={{ width: 44, height: 24, borderRadius: 12, background: collect ? 'var(--accent)' : 'var(--border)', padding: '3px', display: 'flex', alignItems: 'center', transition: 'background 0.2s', flexShrink: 0 }}>
                 <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: collect ? 'translateX(20px)' : 'none', transition: 'transform 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
               </div>
               <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink)', fontSize: 14 }}>コレクト（代引き）</span>
@@ -155,7 +292,8 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
               <div className="mt-2 flex items-center gap-2">
                 <span style={{ color: 'var(--ink-muted)', fontSize: 13 }}>金額</span>
                 <input type="number" value={collectAmount} onChange={(e) => setCollectAmount(e.target.value)}
-                  placeholder="0" className={`${inp} flex-1`} min="0" />
+                  placeholder="0" className={`${inp} flex-1`} min="0"
+                  style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--washi)' }} />
                 <span style={{ color: 'var(--ink-muted)', fontSize: 13 }}>円</span>
               </div>
             )}
@@ -170,11 +308,12 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
             <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--washi)', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: 14 }}>▦</span>
               <div>
-                <p style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 2 }}>スキャン結果</p>
+                <p style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', letterSpacing: '0.1em', marginBottom: 2 }}>スキャン番号</p>
                 <p style={{ fontFamily: 'var(--font-mono)', color: 'var(--ink)', fontSize: 13 }}>{scannedCode}</p>
               </div>
             </div>
           )}
+
           {error && <p style={{ color: 'var(--accent)', fontSize: 13, textAlign: 'center' }}>{error}</p>}
 
           <button type="submit"
@@ -187,10 +326,7 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
   );
 }
 
-const inp = [
-  'w-full px-4 py-2.5 text-sm outline-none',
-  'bg-transparent',
-].join(' ');
+const inp = 'w-full px-4 py-2.5 text-sm outline-none bg-transparent';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
