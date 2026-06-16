@@ -157,6 +157,15 @@ function LocationController({ onLocation, onError, triggerRef }: {
   return null;
 }
 
+function formatDistance(m: number): string {
+  return m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`;
+}
+function formatDuration(s: number): string {
+  const min = Math.round(s / 60);
+  if (min < 60) return `約${min}分`;
+  return `約${Math.floor(min / 60)}時間${min % 60 > 0 ? `${min % 60}分` : ''}`;
+}
+
 export default function MapView() {
   const { selectedDate, setSelectedDate, getByDate, setDeliveryStatus, lastLocation, setLastLocation, autoRoutePackages } = useAppStore();
   const packages = getByDate(selectedDate);
@@ -164,9 +173,12 @@ export default function MapView() {
   const [locError, setLocError] = useState(false);
   const [offRoute, setOffRoute] = useState(false);
   const [rerouteLoading, setRerouteLoading] = useState(false);
+  const [navRoute, setNavRoute] = useState<[number, number][]>([]);
+  const [navInfo, setNavInfo] = useState<{ distance: number; duration: number; name: string } | null>(null);
   const locateTrigger = useRef<(() => void) | null>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [mapHeight, setMapHeight] = useState(500);
+  const navFetchKeyRef = useRef('');
 
   useLayoutEffect(() => {
     const calc = () => {
@@ -187,19 +199,56 @@ export default function MapView() {
   const routePoints = useMemo(() => positioned.map(p => [p.lat!, p.lng!] as [number, number]), [positioned]);
   const clusters = useMemo(() => clusterPackages(positioned), [positioned]);
 
-  // Undelivered route for off-route detection
-  const undeliveredRoute = useMemo(() =>
-    positioned.filter(p => !p.delivered).map(p => [p.lat!, p.lng!] as [number, number]),
+  // First undelivered positioned package (= next delivery target)
+  const nextPkg = useMemo(() =>
+    positioned.find(p => getEffectiveStatus(p) === 'pending'),
     [positioned]
   );
-  const undeliveredRouteRef = useRef(undeliveredRoute);
-  useEffect(() => { undeliveredRouteRef.current = undeliveredRoute; }, [undeliveredRoute]);
+
+  // Undelivered route for off-route detection
+  const undeliveredRoute = useMemo(() =>
+    positioned.filter(p => getEffectiveStatus(p) === 'pending').map(p => [p.lat!, p.lng!] as [number, number]),
+    [positioned]
+  );
 
   // Off-route detection whenever position updates
   useEffect(() => {
     if (!currentPos || undeliveredRoute.length < 2) { setOffRoute(false); return; }
     setOffRoute(checkOffRoute(currentPos, undeliveredRoute));
   }, [currentPos, undeliveredRoute]);
+
+  // Nav route: current position → next package via OSRM road network
+  // Only re-fetches when position moves >~300m or next package changes
+  useEffect(() => {
+    if (!currentPos || !nextPkg) {
+      setNavRoute([]); setNavInfo(null); return;
+    }
+    const roundLat = Math.round(currentPos[0] / 0.003) * 0.003;
+    const roundLng = Math.round(currentPos[1] / 0.003) * 0.003;
+    const key = `${nextPkg.id}_${roundLat}_${roundLng}`;
+    if (navFetchKeyRef.current === key) return;
+    navFetchKeyRef.current = key;
+
+    const controller = new AbortController();
+    const [curLat, curLng] = currentPos;
+    (async () => {
+      try {
+        const coords = `${curLng.toFixed(6)},${curLat.toFixed(6)};${nextPkg.lng!.toFixed(6)},${nextPkg.lat!.toFixed(6)}`;
+        const res = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`,
+          { signal: controller.signal }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.code === 'Ok' && data.routes?.[0] && !controller.signal.aborted) {
+          const r = data.routes[0];
+          setNavRoute((r.geometry.coordinates as [number, number][]).map(([lng, lat]) => [lat, lng]));
+          setNavInfo({ distance: r.distance, duration: r.duration, name: nextPkg.customerName });
+        }
+      } catch { /* AbortError or network error */ }
+    })();
+    return () => controller.abort();
+  }, [currentPos, nextPkg]);
 
   const handleLocation = (p: [number, number]) => {
     setCurrentPos(p);
@@ -287,8 +336,17 @@ export default function MapView() {
             </Marker>
           )}
 
+          {/* Overview route: grey dashed */}
           {routePoints.length >= 2 && (
-            <Polyline positions={routePoints} color="var(--accent)" weight={2} opacity={0.8} dashArray="8 5" />
+            <Polyline positions={routePoints} color="#B0A090" weight={1.5} opacity={0.6} dashArray="6 6" />
+          )}
+
+          {/* Navigation route: current pos → next package (road-following, solid blue) */}
+          {navRoute.length >= 2 && (
+            <>
+              <Polyline positions={navRoute} color="#fff" weight={6} opacity={0.8} />
+              <Polyline positions={navRoute} color="#2563EB" weight={4} opacity={0.95} />
+            </>
           )}
 
           {clusters.map((cluster, ci) => {
@@ -343,6 +401,30 @@ export default function MapView() {
                 再ルート検索
               </button>
             )}
+          </div>
+        )}
+
+        {/* Navigation info panel */}
+        {navInfo && (
+          <div style={{
+            position: 'absolute', top: 8, left: 8, zIndex: 1000,
+            background: 'rgba(254,252,248,0.96)', border: '1px solid var(--border)',
+            borderRadius: 12, padding: '8px 12px',
+            boxShadow: '0 2px 12px rgba(0,0,0,0.15)',
+            maxWidth: 'calc(100% - 110px)',
+          }}>
+            <p style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', marginBottom: 2, letterSpacing: '0.06em' }}>
+              次の配達先
+            </p>
+            <p style={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', fontFamily: 'var(--font-serif)', marginBottom: 3 }} className="truncate">
+              {navInfo.name}
+            </p>
+            <p style={{ fontSize: 13, color: '#2563EB', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+              {formatDistance(navInfo.distance)}
+              <span style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', fontWeight: 400, fontSize: 11, marginLeft: 6 }}>
+                {formatDuration(navInfo.duration)}
+              </span>
+            </p>
           </div>
         )}
 
