@@ -4,7 +4,7 @@ import L from 'leaflet';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useAppStore } from '../store/useAppStore';
-import { Package, COOL_LABELS } from '../types';
+import { Package, COOL_LABELS, TIME_SLOT_LABELS, TIME_SLOT_COLORS } from '../types';
 
 const DEFAULT_CENTER: [number, number] = [35.6812, 139.7671];
 
@@ -17,6 +17,7 @@ L.Icon.Default.mergeOptions({
 
 function markerColor(pkg: Package) {
   if (pkg.delivered) return 'var(--delivered)';
+  if (pkg.timeSlot) return TIME_SLOT_COLORS[pkg.timeSlot];
   if (pkg.cool === 'frozen') return 'var(--frozen)';
   if (pkg.cool === 'refrigerated') return 'var(--cool)';
   return 'var(--ink)';
@@ -42,6 +43,48 @@ function createMarkerIcon(pkg: Package, n: number) {
     iconAnchor: [16, 16],
     popupAnchor: [0, -20],
   });
+}
+
+function createClusterIcon(count: number, color: string) {
+  return L.divIcon({
+    html: `<div style="
+      width:40px;height:40px;border-radius:50%;
+      background:${color};
+      color:#fff;
+      display:flex;align-items:center;justify-content:center;
+      font-size:14px;font-weight:700;
+      font-family:'Noto Sans JP',sans-serif;
+      box-shadow:0 2px 10px rgba(28,25,23,0.3);
+      position:relative;
+    ">${count}<span style="position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:var(--accent);color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;">✦</span></div>`,
+    className: '',
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+    popupAnchor: [0, -24],
+  });
+}
+
+const CLUSTER_THRESHOLD = 0.0004;
+
+function clusterPackages(pkgs: Package[]): { center: [number, number]; packages: Package[] }[] {
+  const assigned = new Set<string>();
+  const clusters: { center: [number, number]; packages: Package[] }[] = [];
+  for (const pkg of pkgs) {
+    if (assigned.has(pkg.id)) continue;
+    const group = [pkg];
+    assigned.add(pkg.id);
+    for (const other of pkgs) {
+      if (assigned.has(other.id)) continue;
+      if (Math.abs(pkg.lat! - other.lat!) < CLUSTER_THRESHOLD && Math.abs(pkg.lng! - other.lng!) < CLUSTER_THRESHOLD) {
+        group.push(other);
+        assigned.add(other.id);
+      }
+    }
+    const avgLat = group.reduce((s, p) => s + p.lat!, 0) / group.length;
+    const avgLng = group.reduce((s, p) => s + p.lng!, 0) / group.length;
+    clusters.push({ center: [avgLat, avgLng], packages: group });
+  }
+  return clusters;
 }
 
 const currentLocIcon = L.divIcon({
@@ -100,6 +143,7 @@ export default function MapView() {
 
   const positioned = useMemo(() => packages.filter(p => p.lat !== undefined && p.lng !== undefined), [packages]);
   const routePoints = useMemo(() => positioned.map(p => [p.lat!, p.lng!] as [number, number]), [positioned]);
+  const clusters = useMemo(() => clusterPackages(positioned), [positioned]);
 
   // Date formatting
   const dateObj = parseISO(selectedDate);
@@ -177,13 +221,38 @@ export default function MapView() {
             <Polyline positions={routePoints} color="var(--accent)" weight={2} opacity={0.8} dashArray="8 5" />
           )}
 
-          {positioned.map((pkg, idx) => (
-            <Marker key={pkg.id} position={[pkg.lat!, pkg.lng!]} icon={createMarkerIcon(pkg, idx + 1)}>
-              <Popup maxWidth={260}>
-                <PackagePopup pkg={pkg} routeNo={idx + 1} onDelivered={setDelivered} />
-              </Popup>
-            </Marker>
-          ))}
+          {clusters.map((cluster, ci) => {
+            if (cluster.packages.length === 1) {
+              const pkg = cluster.packages[0];
+              const routeNo = positioned.indexOf(pkg) + 1;
+              return (
+                <Marker key={pkg.id} position={[pkg.lat!, pkg.lng!]} icon={createMarkerIcon(pkg, routeNo)}>
+                  <Popup maxWidth={260}>
+                    <PackagePopup pkg={pkg} routeNo={routeNo} onDelivered={setDelivered} />
+                  </Popup>
+                </Marker>
+              );
+            }
+            const allDelivered = cluster.packages.every(p => p.delivered);
+            const clusterColor = allDelivered ? 'var(--delivered)' : 'var(--ink)';
+            return (
+              <Marker key={`cluster-${ci}`} position={cluster.center} icon={createClusterIcon(cluster.packages.length, clusterColor)}>
+                <Popup maxWidth={280}>
+                  <div style={{ fontFamily: 'var(--font-sans)' }}>
+                    <p style={{ fontWeight: 700, marginBottom: 8, color: 'var(--ink)', fontSize: 13 }}>同一場所 {cluster.packages.length}件</p>
+                    {cluster.packages.map((pkg) => {
+                      const routeNo = positioned.indexOf(pkg) + 1;
+                      return (
+                        <div key={pkg.id} style={{ borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 6 }}>
+                          <PackagePopup pkg={pkg} routeNo={routeNo} onDelivered={setDelivered} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
         </MapContainer>
 
         {/* Legend overlay */}
@@ -195,11 +264,21 @@ export default function MapView() {
             { color: 'var(--frozen)', label: '冷凍' },
             { color: 'var(--delivered)', label: '配達済' },
           ].map(({ color, label }) => (
-            <div key={label} className="flex items-center gap-1.5 mb-0.5 last:mb-0">
+            <div key={label} className="flex items-center gap-1.5 mb-0.5">
               <div style={{ width: 10, height: 10, borderRadius: '50%', border: `2px solid ${color}` }} />
               <span style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }}>{label}</span>
             </div>
           ))}
+          {packages.some(p => p.timeSlot) && (
+            <div style={{ borderTop: '1px solid var(--border)', marginTop: 4, paddingTop: 4 }}>
+              {Object.entries(TIME_SLOT_COLORS).filter(([slot]) => packages.some(p => p.timeSlot === slot)).map(([slot, color]) => (
+                <div key={slot} className="flex items-center gap-1.5 mb-0.5 last:mb-0">
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: color }} />
+                  <span style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', fontSize: 9 }}>{slot}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -233,9 +312,11 @@ function PackagePopup({ pkg, routeNo, onDelivered }: {
       </div>
       <p style={{ color: 'var(--ink-muted)', fontSize: 11 }} className="mb-2">{pkg.address}</p>
       <div className="flex flex-wrap gap-1 mb-3">
-        <Tag>{pkg.size}s</Tag>
+        {pkg.nekoposu ? <Tag>ネコポス</Tag> : <Tag>{pkg.size}s</Tag>}
         {pkg.cool !== 'none' && <Tag accent={pkg.cool === 'frozen' ? 'var(--frozen)' : 'var(--cool)'}>{COOL_LABELS[pkg.cool]}</Tag>}
         {pkg.collect && <Tag accent="var(--accent)">コレクト{pkg.collectAmount ? ` ¥${pkg.collectAmount.toLocaleString()}` : ''}</Tag>}
+        {pkg.cashOnDelivery && <Tag accent="#555">着払い{pkg.cashOnDeliveryAmount ? ` ¥${pkg.cashOnDeliveryAmount.toLocaleString()}` : ''}</Tag>}
+        {pkg.timeSlot && <Tag accent={TIME_SLOT_COLORS[pkg.timeSlot]}>{TIME_SLOT_LABELS[pkg.timeSlot]}</Tag>}
         {pkg.delivered && <Tag accent="var(--delivered)">配達済</Tag>}
       </div>
       {pkg.notes && <p style={{ color: 'var(--ink-muted)', fontSize: 11 }} className="mb-2">📝 {pkg.notes}</p>}

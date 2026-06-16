@@ -1,25 +1,43 @@
+import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Package, COOL_LABELS } from '../types';
+import { Package, COOL_LABELS, TimeSlot, TIME_SLOT_LABELS, TIME_SLOT_COLORS, TIME_SLOT_ORDER } from '../types';
 
 export default function RouteManager() {
-  const { selectedDate, setSelectedDate, getByDate, movePackage, setDelivered } = useAppStore();
+  const { selectedDate, setSelectedDate, getByDate, movePackage, setDelivered, autoRoutePackages } = useAppStore();
   const packages = getByDate(selectedDate);
+  const [slotFilter, setSlotFilter] = useState<TimeSlot | 'all'>('all');
+  const [autoRouting, setAutoRouting] = useState(false);
+
   const delivered = packages.filter(p => p.delivered).length;
   const remaining = packages.length - delivered;
   const pct = packages.length > 0 ? (delivered / packages.length) * 100 : 0;
 
+  const visiblePackages = slotFilter === 'all'
+    ? packages
+    : packages.filter(p => p.timeSlot === slotFilter);
+
+  const handleAutoRoute = () => {
+    setAutoRouting(true);
+    setTimeout(() => {
+      autoRoutePackages(selectedDate);
+      setAutoRouting(false);
+    }, 0);
+  };
+
   const copyRoute = () => {
     const lines = packages.map((p, i) =>
-      `${i + 1}. ${p.customerName}（${p.address}）${p.cool !== 'none' ? `[${COOL_LABELS[p.cool]}]` : ''}${p.collect ? '[コレクト]' : ''}${p.delivered ? ' ✓' : ''}`
+      `${i + 1}. ${p.customerName}（${p.address}）${p.cool !== 'none' ? `[${COOL_LABELS[p.cool]}]` : ''}${p.collect ? '[コレクト]' : ''}${p.cashOnDelivery ? '[着払い]' : ''}${p.nekoposu ? '[ネコポス]' : ''}${p.timeSlot ? `[${TIME_SLOT_LABELS[p.timeSlot]}]` : ''}${p.delivered ? ' ✓' : ''}`
     );
     navigator.clipboard.writeText(lines.join('\n'));
   };
+
+  const hasGeocodedPkgs = packages.filter(p => p.lat !== undefined && p.lng !== undefined).length >= 2;
 
   return (
     <div style={{ background: 'var(--washi)' }} className="flex flex-col h-full">
       {/* Header */}
       <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)' }} className="px-4 py-3 flex-shrink-0">
-        <div className="flex items-center gap-2 mb-3">
+        <div className="flex items-center gap-2 mb-2">
           <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}
             style={{ border: '1px solid var(--border)', background: 'var(--washi)', color: 'var(--ink)', fontFamily: 'var(--font-sans)', fontSize: 13, borderRadius: 8, flex: 1 }}
             className="px-3 py-1.5 outline-none" />
@@ -27,12 +45,25 @@ export default function RouteManager() {
             <button onClick={copyRoute}
               style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', fontSize: 12, borderRadius: 20 }}
               className="px-3 py-1.5 whitespace-nowrap">
-              📋 コピー
+              📋
             </button>
           )}
         </div>
+
+        {/* Auto route button */}
+        {packages.length > 1 && (
+          <button onClick={handleAutoRoute} disabled={autoRouting || !hasGeocodedPkgs}
+            style={{
+              width: '100%', padding: '8px 0', borderRadius: 10, fontSize: 13, fontFamily: 'var(--font-sans)', fontWeight: 600, marginBottom: 8,
+              background: hasGeocodedPkgs ? 'var(--ink)' : 'var(--border)',
+              color: '#fff', border: 'none', cursor: hasGeocodedPkgs ? 'pointer' : 'not-allowed', opacity: autoRouting ? 0.7 : 1,
+            }}>
+            {autoRouting ? '計算中…' : hasGeocodedPkgs ? '✦ 自動ルート（時間帯 → 最短距離）' : '📍 座標未取得のため自動ルート不可'}
+          </button>
+        )}
+
         {packages.length > 0 && (
-          <div>
+          <>
             <div className="flex justify-between mb-1">
               <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }}>配達進捗</span>
               <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--ink)' }}>
@@ -43,6 +74,22 @@ export default function RouteManager() {
             <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${pct}%`, background: 'var(--delivered)', borderRadius: 2, transition: 'width 0.4s' }} />
             </div>
+          </>
+        )}
+
+        {/* Time slot filter */}
+        {packages.some(p => p.timeSlot) && (
+          <div className="flex gap-1 mt-2 overflow-x-auto pb-0.5">
+            <button onClick={() => setSlotFilter('all')}
+              style={{ flexShrink: 0, fontSize: 11, padding: '4px 10px', borderRadius: 20, fontFamily: 'var(--font-sans)', background: slotFilter === 'all' ? 'var(--ink)' : 'transparent', color: slotFilter === 'all' ? '#fff' : 'var(--ink-muted)', border: `1px solid ${slotFilter === 'all' ? 'var(--ink)' : 'var(--border)'}` }}>
+              全て
+            </button>
+            {TIME_SLOT_ORDER.filter(s => packages.some(p => p.timeSlot === s)).map(slot => (
+              <button key={slot} onClick={() => setSlotFilter(slotFilter === slot ? 'all' : slot)}
+                style={{ flexShrink: 0, fontSize: 11, padding: '4px 10px', borderRadius: 20, fontFamily: 'var(--font-sans)', background: slotFilter === slot ? TIME_SLOT_COLORS[slot] : 'transparent', color: slotFilter === slot ? '#fff' : TIME_SLOT_COLORS[slot], border: `1px solid ${TIME_SLOT_COLORS[slot]}` }}>
+                {TIME_SLOT_LABELS[slot]}
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -54,14 +101,21 @@ export default function RouteManager() {
             <div className="text-5xl mb-3">↕</div>
             <p style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }} className="text-sm">荷物がありません</p>
           </div>
-        ) : packages.map((pkg, idx) => (
-          <RouteItem key={pkg.id} pkg={pkg} routeNo={idx + 1}
-            isFirst={idx === 0} isLast={idx === packages.length - 1}
-            onUp={() => movePackage(pkg.id, 'up')}
-            onDown={() => movePackage(pkg.id, 'down')}
-            onToggle={() => setDelivered(pkg.id, !pkg.delivered)}
-          />
-        ))}
+        ) : visiblePackages.length === 0 ? (
+          <div className="text-center py-16">
+            <p style={{ color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }} className="text-sm">この時間帯の荷物はありません</p>
+          </div>
+        ) : visiblePackages.map((pkg) => {
+          const allIdx = packages.findIndex(p => p.id === pkg.id);
+          return (
+            <RouteItem key={pkg.id} pkg={pkg} routeNo={allIdx + 1}
+              isFirst={allIdx === 0} isLast={allIdx === packages.length - 1}
+              onUp={() => movePackage(pkg.id, 'up')}
+              onDown={() => movePackage(pkg.id, 'down')}
+              onToggle={() => setDelivered(pkg.id, !pkg.delivered)}
+            />
+          );
+        })}
       </div>
 
       {/* Footer summary */}
@@ -70,11 +124,14 @@ export default function RouteManager() {
           <p style={{ fontSize: 11, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)', marginBottom: 6, letterSpacing: '0.05em' }}>サイズ内訳</p>
           <div className="flex flex-wrap gap-1.5">
             {Object.entries(
-              packages.reduce<Record<number, number>>((a, p) => ({ ...a, [p.size]: (a[p.size] ?? 0) + 1 }), {})
-            ).sort(([a], [b]) => +a - +b).map(([s, c]) => (
+              packages.reduce<Record<string, number>>((a, p) => {
+                const key = p.nekoposu ? 'ネコポス' : `${p.size}s`;
+                return { ...a, [key]: (a[key] ?? 0) + 1 };
+              }, {})
+            ).sort(([a], [b]) => a.localeCompare(b)).map(([s, c]) => (
               <span key={s}
                 style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, border: '1px solid var(--border)', color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)', background: 'var(--washi)' }}>
-                {s}s × {c}
+                {s} × {c}
               </span>
             ))}
             {packages.filter(p => p.cool !== 'none').length > 0 && (
@@ -85,6 +142,11 @@ export default function RouteManager() {
             {packages.filter(p => p.collect).length > 0 && (
               <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, border: '1px solid var(--accent)', color: 'var(--accent)', fontFamily: 'var(--font-sans)', background: 'var(--washi)' }}>
                 コレクト × {packages.filter(p => p.collect).length}
+              </span>
+            )}
+            {packages.filter(p => p.cashOnDelivery).length > 0 && (
+              <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, border: '1px solid #555', color: '#555', fontFamily: 'var(--font-sans)', background: 'var(--washi)' }}>
+                着払い × {packages.filter(p => p.cashOnDelivery).length}
               </span>
             )}
           </div>
@@ -98,7 +160,9 @@ function RouteItem({ pkg, routeNo, isFirst, isLast, onUp, onDown, onToggle }: {
   pkg: Package; routeNo: number; isFirst: boolean; isLast: boolean;
   onUp: () => void; onDown: () => void; onToggle: () => void;
 }) {
+  const slotColor = pkg.timeSlot ? TIME_SLOT_COLORS[pkg.timeSlot] : null;
   const borderColor = pkg.delivered ? 'var(--delivered)' :
+    slotColor ? slotColor :
     pkg.cool === 'frozen' ? 'var(--frozen)' :
     pkg.cool === 'refrigerated' ? 'var(--cool)' : 'var(--border)';
 
@@ -122,13 +186,24 @@ function RouteItem({ pkg, routeNo, isFirst, isLast, onUp, onDown, onToggle }: {
 
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <span style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 14, fontWeight: 600, textDecoration: pkg.delivered ? 'line-through' : 'none', opacity: pkg.delivered ? 0.5 : 1 }}
-          className="truncate block">{pkg.customerName}</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 14, fontWeight: 600, textDecoration: pkg.delivered ? 'line-through' : 'none', opacity: pkg.delivered ? 0.5 : 1 }}
+            className="truncate">{pkg.customerName}</span>
+          {pkg.timeSlot && (
+            <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: TIME_SLOT_COLORS[pkg.timeSlot], color: '#fff', fontFamily: 'var(--font-sans)', flexShrink: 0 }}>
+              {TIME_SLOT_LABELS[pkg.timeSlot]}
+            </span>
+          )}
+        </div>
         <p style={{ color: 'var(--ink-muted)', fontSize: 11, fontFamily: 'var(--font-sans)' }} className="truncate">{pkg.address}</p>
-        <div className="flex gap-2 mt-0.5">
-          <span style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)' }}>{pkg.size}s</span>
+        <div className="flex gap-2 mt-0.5 flex-wrap">
+          {pkg.nekoposu
+            ? <span style={{ fontSize: 10, color: 'var(--ink)', fontFamily: 'var(--font-sans)' }}>ネコポス</span>
+            : <span style={{ fontSize: 10, color: 'var(--ink-muted)', fontFamily: 'var(--font-mono)' }}>{pkg.size}s</span>
+          }
           {pkg.cool !== 'none' && <span style={{ fontSize: 10, color: pkg.cool === 'frozen' ? 'var(--frozen)' : 'var(--cool)', fontFamily: 'var(--font-sans)' }}>{COOL_LABELS[pkg.cool]}</span>}
-          {pkg.collect && <span style={{ fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--font-sans)' }}>コレクト</span>}
+          {pkg.collect && <span style={{ fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--font-sans)' }}>コレクト{pkg.collectAmount ? ` ¥${pkg.collectAmount.toLocaleString()}` : ''}</span>}
+          {pkg.cashOnDelivery && <span style={{ fontSize: 10, color: '#555', fontFamily: 'var(--font-sans)' }}>着払い{pkg.cashOnDeliveryAmount ? ` ¥${pkg.cashOnDeliveryAmount.toLocaleString()}` : ''}</span>}
         </div>
       </div>
 

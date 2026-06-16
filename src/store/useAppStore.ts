@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { format } from 'date-fns';
-import { Package, PackageSize, CoolType, TabType, User } from '../types';
+import { Package, PackageSize, CoolType, TabType, User, TimeSlot, TIME_SLOT_ORDER } from '../types';
 import { writeToCloud, isCloudSyncEnabled } from '../lib/sync';
 
 interface AppStore {
@@ -36,6 +36,7 @@ interface AppStore {
   deletePackage: (id: string) => void;
   movePackage: (id: string, direction: 'up' | 'down') => void;
   setDelivered: (id: string, delivered: boolean) => void;
+  autoRoutePackages: (date: string) => void;
 
   // Cloud sync
   applyCloudData: (data: { adminId: string; adminPassword: string; users: User[]; packages: Package[] }) => void;
@@ -190,6 +191,62 @@ export const useAppStore = create<AppStore>()(
       setDelivered: (id, delivered) => {
         set((s) => {
           const packages = s.packages.map((p) => (p.id === id ? { ...p, delivered } : p));
+          cloudSync({ ...s, packages });
+          return { packages };
+        });
+      },
+
+      autoRoutePackages: (date: string) => {
+        const state = get();
+        const userId = state.currentUser;
+        const allDayPkgs = state.packages.filter(p => p.date === date && p.userId === userId);
+        const withCoords = allDayPkgs.filter(p => p.lat !== undefined && p.lng !== undefined);
+        const withoutCoords = allDayPkgs.filter(p => p.lat === undefined || p.lng === undefined);
+        if (withCoords.length < 2) return;
+
+        const dist = (a: Package, b: Package) => {
+          const dlat = a.lat! - b.lat!;
+          const dlng = a.lng! - b.lng!;
+          return dlat * dlat + dlng * dlng;
+        };
+
+        const nearestNeighbor = (startPkg: Package | null, pkgs: Package[]): Package[] => {
+          if (pkgs.length === 0) return [];
+          const remaining = [...pkgs];
+          const result: Package[] = [];
+          let current: Package;
+          if (!startPkg) { current = remaining.shift()!; result.push(current); }
+          else { current = startPkg; }
+          while (remaining.length > 0) {
+            let ni = 0, minD = dist(current, remaining[0]);
+            for (let i = 1; i < remaining.length; i++) {
+              const d = dist(current, remaining[i]);
+              if (d < minD) { minD = d; ni = i; }
+            }
+            current = remaining.splice(ni, 1)[0];
+            result.push(current);
+          }
+          return result;
+        };
+
+        const slotGroups: (TimeSlot | undefined)[] = [...TIME_SLOT_ORDER, undefined];
+        const ordered: Package[] = [];
+        for (const slot of slotGroups) {
+          const group = slot !== undefined
+            ? withCoords.filter(p => p.timeSlot === slot)
+            : withCoords.filter(p => !p.timeSlot);
+          if (group.length === 0) continue;
+          const last = ordered.length > 0 ? ordered[ordered.length - 1] : null;
+          ordered.push(...nearestNeighbor(last, group));
+        }
+
+        const finalOrder = [...ordered, ...withoutCoords.sort((a, b) => a.routeOrder - b.routeOrder)];
+        set(s => {
+          const packages = s.packages.map(p => {
+            if (p.date !== date || p.userId !== userId) return p;
+            const idx = finalOrder.findIndex(fp => fp.id === p.id);
+            return idx >= 0 ? { ...p, routeOrder: idx } : p;
+          });
           cloudSync({ ...s, packages });
           return { packages };
         });

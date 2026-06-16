@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Package, COOL_LABELS } from '../types';
+import { Package, COOL_LABELS, TIME_SLOT_LABELS, TIME_SLOT_COLORS } from '../types';
 import PackageModal from './PackageModal';
 import BarcodeScanner from './BarcodeScanner';
 
@@ -127,9 +127,11 @@ function PackageCard({ pkg, routeNo, onEdit, onDelete, onToggle }: {
         </div>
         <p style={{ color: 'var(--ink-muted)', fontSize: 12, fontFamily: 'var(--font-sans)' }} className="truncate mt-0.5">{pkg.address}</p>
         <div className="flex flex-wrap gap-1 mt-1.5">
-          <Chip>{pkg.size}s</Chip>
+          {pkg.nekoposu ? <Chip color="var(--ink)">ネコポス</Chip> : <Chip>{pkg.size}s</Chip>}
           {pkg.cool !== 'none' && <Chip color={pkg.cool === 'frozen' ? 'var(--frozen)' : 'var(--cool)'}>{COOL_LABELS[pkg.cool]}</Chip>}
-          {pkg.collect && <Chip color="var(--accent)">¥コレクト</Chip>}
+          {pkg.collect && <Chip color="var(--accent)">コレクト{pkg.collectAmount ? ` ¥${pkg.collectAmount.toLocaleString()}` : ''}</Chip>}
+          {pkg.cashOnDelivery && <Chip color="#555">着払い{pkg.cashOnDeliveryAmount ? ` ¥${pkg.cashOnDeliveryAmount.toLocaleString()}` : ''}</Chip>}
+          {pkg.timeSlot && <Chip color={TIME_SLOT_COLORS[pkg.timeSlot]}>{TIME_SLOT_LABELS[pkg.timeSlot]}</Chip>}
           {!pkg.lat && <Chip color="var(--accent)">📍未取得</Chip>}
         </div>
         {pkg.notes && <p style={{ color: 'var(--ink-muted)', fontSize: 11, marginTop: 4 }}>📝 {pkg.notes}</p>}

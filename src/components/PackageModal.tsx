@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Package, PACKAGE_SIZES, CoolType, PackageSize, COOL_LABELS } from '../types';
+import { Package, PACKAGE_SIZES, CoolType, PackageSize, COOL_LABELS, TimeSlot, TIME_SLOT_LABELS, TIME_SLOT_COLORS } from '../types';
 import { useAppStore } from '../store/useAppStore';
 
 interface Props {
@@ -53,8 +53,12 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
   const [zipStatus, setZipStatus] = useState<'idle' | 'loading' | 'ok' | 'notfound'>('idle');
   const [size, setSize] = useState<PackageSize>(pkg?.size ?? 60);
   const [cool, setCool] = useState<CoolType>(pkg?.cool ?? 'none');
+  const [nekoposu, setNekoposu] = useState(pkg?.nekoposu ?? false);
   const [collect, setCollect] = useState(pkg?.collect ?? false);
   const [collectAmount, setCollectAmount] = useState(pkg?.collectAmount?.toString() ?? '');
+  const [cashOnDelivery, setCashOnDelivery] = useState(pkg?.cashOnDelivery ?? false);
+  const [cashOnDeliveryAmount, setCashOnDeliveryAmount] = useState(pkg?.cashOnDeliveryAmount?.toString() ?? '');
+  const [timeSlot, setTimeSlot] = useState<TimeSlot | ''>(pkg?.timeSlot ?? '');
   const [notes, setNotes] = useState(pkg?.notes ?? '');
   const [date, setDate] = useState(pkg?.date ?? defaultDate);
   const [lat, setLat] = useState(pkg?.lat);
@@ -138,7 +142,10 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
     if (!address.trim()) { setError('住所を入力してください'); return; }
     onSave({
       customerName: customerName.trim(), address: address.trim(), size, cool,
+      nekoposu,
       collect, collectAmount: collect && collectAmount ? parseInt(collectAmount, 10) : undefined,
+      cashOnDelivery, cashOnDeliveryAmount: cashOnDelivery && cashOnDeliveryAmount ? parseInt(cashOnDeliveryAmount, 10) : undefined,
+      timeSlot: timeSlot || undefined,
       notes: notes.trim() || undefined, date, lat, lng, delivered: pkg?.delivered ?? false,
     });
   };
@@ -249,18 +256,27 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
           </Field>
 
           <Field label="サイズ">
-            <div className="grid grid-cols-4 gap-1.5 p-2">
-              {PACKAGE_SIZES.map((s) => (
-                <button key={s} type="button" onClick={() => setSize(s)}
-                  style={{
-                    borderRadius: 8, fontSize: 12, padding: '6px 0', fontFamily: 'var(--font-mono)',
-                    background: size === s ? 'var(--ink)' : 'transparent',
-                    color: size === s ? '#fff' : 'var(--ink-muted)',
-                    border: `1px solid ${size === s ? 'var(--ink)' : 'var(--border)'}`,
-                  }}>
-                  {s}
-                </button>
-              ))}
+            <div className="p-2 space-y-2">
+              <label className="flex items-center gap-3 cursor-pointer pb-2" style={{ borderBottom: '1px solid var(--border)' }}>
+                <div onClick={() => setNekoposu(!nekoposu)}
+                  style={{ width: 44, height: 24, borderRadius: 12, background: nekoposu ? 'var(--ink)' : 'var(--border)', padding: '3px', display: 'flex', alignItems: 'center', transition: 'background 0.2s', flexShrink: 0 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: nekoposu ? 'translateX(20px)' : 'none', transition: 'transform 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+                </div>
+                <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink)', fontSize: 14 }}>ネコポス</span>
+              </label>
+              <div className="grid grid-cols-4 gap-1.5" style={{ opacity: nekoposu ? 0.4 : 1 }}>
+                {PACKAGE_SIZES.map((s) => (
+                  <button key={s} type="button" onClick={() => { setSize(s); setNekoposu(false); }}
+                    style={{
+                      borderRadius: 8, fontSize: 12, padding: '6px 0', fontFamily: 'var(--font-mono)',
+                      background: !nekoposu && size === s ? 'var(--ink)' : 'transparent',
+                      color: !nekoposu && size === s ? '#fff' : 'var(--ink-muted)',
+                      border: `1px solid ${!nekoposu && size === s ? 'var(--ink)' : 'var(--border)'}`,
+                    }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
           </Field>
 
@@ -286,7 +302,7 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
                 style={{ width: 44, height: 24, borderRadius: 12, background: collect ? 'var(--accent)' : 'var(--border)', padding: '3px', display: 'flex', alignItems: 'center', transition: 'background 0.2s', flexShrink: 0 }}>
                 <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: collect ? 'translateX(20px)' : 'none', transition: 'transform 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
               </div>
-              <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink)', fontSize: 14 }}>コレクト（代引き）</span>
+              <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink)', fontSize: 14 }}>コレクト（ヤマト代引き）</span>
             </label>
             {collect && (
               <div className="mt-2 flex items-center gap-2">
@@ -298,6 +314,54 @@ export default function PackageModal({ pkg, defaultDate, scannedCode, onSave, on
               </div>
             )}
           </div>
+
+          <div>
+            <label className="flex items-center gap-3 cursor-pointer">
+              <div onClick={() => setCashOnDelivery(!cashOnDelivery)}
+                style={{ width: 44, height: 24, borderRadius: 12, background: cashOnDelivery ? '#555' : 'var(--border)', padding: '3px', display: 'flex', alignItems: 'center', transition: 'background 0.2s', flexShrink: 0 }}>
+                <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#fff', transform: cashOnDelivery ? 'translateX(20px)' : 'none', transition: 'transform 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+              </div>
+              <span style={{ fontFamily: 'var(--font-sans)', color: 'var(--ink)', fontSize: 14 }}>着払い</span>
+            </label>
+            {cashOnDelivery && (
+              <div className="mt-2 flex items-center gap-2">
+                <span style={{ color: 'var(--ink-muted)', fontSize: 13 }}>金額</span>
+                <input type="number" value={cashOnDeliveryAmount} onChange={(e) => setCashOnDeliveryAmount(e.target.value)}
+                  placeholder="0" className={`${inp} flex-1`} min="0"
+                  style={{ border: '1px solid var(--border)', borderRadius: 8, background: 'var(--washi)' }} />
+                <span style={{ color: 'var(--ink-muted)', fontSize: 13 }}>円</span>
+              </div>
+            )}
+          </div>
+
+          <Field label="時間帯指定（任意）">
+            <div className="p-2 space-y-1.5">
+              <div className="grid grid-cols-2 gap-1.5">
+                {(Object.keys(TIME_SLOT_LABELS) as TimeSlot[]).map((slot) => {
+                  const color = TIME_SLOT_COLORS[slot];
+                  const selected = timeSlot === slot;
+                  return (
+                    <button key={slot} type="button" onClick={() => setTimeSlot(selected ? '' : slot)}
+                      style={{
+                        padding: '7px 0', borderRadius: 8, fontSize: 12, fontFamily: 'var(--font-sans)',
+                        background: selected ? color : 'transparent',
+                        color: selected ? '#fff' : color,
+                        border: `1.5px solid ${color}`,
+                        fontWeight: selected ? 700 : 400,
+                      }}>
+                      {TIME_SLOT_LABELS[slot]}
+                    </button>
+                  );
+                })}
+              </div>
+              {timeSlot && (
+                <button type="button" onClick={() => setTimeSlot('')}
+                  style={{ width: '100%', padding: '5px 0', borderRadius: 8, fontSize: 11, color: 'var(--ink-muted)', border: '1px solid var(--border)', background: 'transparent', fontFamily: 'var(--font-sans)' }}>
+                  指定なしに戻す
+                </button>
+              )}
+            </div>
+          </Field>
 
           <Field label="備考（任意）">
             <input type="text" value={notes} onChange={(e) => setNotes(e.target.value)}
