@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Package, COOL_LABELS, TIME_SLOT_LABELS, TIME_SLOT_COLORS } from '../types';
+import {
+  Package, COOL_LABELS, TIME_SLOT_LABELS, TIME_SLOT_COLORS,
+  DeliveryStatus, DELIVERY_STATUS_LABELS, DELIVERY_STATUS_COLORS, DELIVERY_STATUS_ICONS,
+  getEffectiveStatus,
+} from '../types';
 import PackageModal from './PackageModal';
 import BarcodeScanner from './BarcodeScanner';
 
 export default function PackageList() {
-  const { selectedDate, setSelectedDate, getByDate, addPackage, updatePackage, deletePackage, setDelivered } = useAppStore();
+  const { selectedDate, setSelectedDate, getByDate, addPackage, updatePackage, deletePackage, setDeliveryStatus } = useAppStore();
   const packages = getByDate(selectedDate);
   const [showModal, setShowModal] = useState(false);
   const [editTarget, setEditTarget] = useState<Package | undefined>();
@@ -13,11 +17,15 @@ export default function PackageList() {
   const [showScanner, setShowScanner] = useState(false);
   const [scannedCode, setScannedCode] = useState<string | undefined>();
 
+  const delivered = packages.filter(p => getEffectiveStatus(p) === 'delivered').length;
+  const absent = packages.filter(p => getEffectiveStatus(p) === 'absent').length;
+  const redelivery = packages.filter(p => getEffectiveStatus(p) === 'redelivery').length;
   const stats = {
     total: packages.length,
-    delivered: packages.filter(p => p.delivered).length,
+    delivered,
+    absent,
+    redelivery,
     cool: packages.filter(p => p.cool !== 'none').length,
-    collect: packages.filter(p => p.collect).length,
   };
 
   const handleSave = (data: Omit<Package, 'id' | 'routeOrder' | 'userId'>) => {
@@ -53,12 +61,12 @@ export default function PackageList() {
           </button>
         </div>
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${2 + (stats.absent > 0 ? 1 : 0) + (stats.redelivery > 0 ? 1 : 0)}, 1fr)` }}>
           {[
             { label: '合計', value: stats.total, color: 'var(--ink)' },
             { label: '配達済', value: stats.delivered, color: 'var(--delivered)' },
-            { label: 'クール', value: stats.cool, color: 'var(--cool)' },
-            { label: 'コレクト', value: stats.collect, color: 'var(--accent)' },
+            ...(stats.absent > 0 ? [{ label: '不在', value: stats.absent, color: '#E74C3C' }] : []),
+            ...(stats.redelivery > 0 ? [{ label: '再配達', value: stats.redelivery, color: '#8E44AD' }] : []),
           ].map(({ label, value, color }) => (
             <div key={label} style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--washi)' }}
               className="text-center py-2">
@@ -82,7 +90,7 @@ export default function PackageList() {
           <PackageCard key={pkg.id} pkg={pkg} routeNo={idx + 1}
             onEdit={() => { setEditTarget(pkg); setShowModal(true); }}
             onDelete={() => setConfirmDelete(pkg.id)}
-            onToggle={() => setDelivered(pkg.id, !pkg.delivered)}
+            onStatusChange={(s) => setDeliveryStatus(pkg.id, s)}
           />
         ))}
       </div>
@@ -103,58 +111,85 @@ export default function PackageList() {
   );
 }
 
-function PackageCard({ pkg, routeNo, onEdit, onDelete, onToggle }: {
+const STATUS_OPTIONS: DeliveryStatus[] = ['delivered', 'absent', 'redelivery'];
+
+function PackageCard({ pkg, routeNo, onEdit, onDelete, onStatusChange }: {
   pkg: Package; routeNo: number;
-  onEdit: () => void; onDelete: () => void; onToggle: () => void;
+  onEdit: () => void; onDelete: () => void; onStatusChange: (s: DeliveryStatus) => void;
 }) {
-  const borderColor = pkg.delivered ? 'var(--delivered)' :
+  const status = getEffectiveStatus(pkg);
+  const statusColor = DELIVERY_STATUS_COLORS[status];
+  const borderColor = status !== 'pending' ? statusColor :
     pkg.cool === 'frozen' ? 'var(--frozen)' :
     pkg.cool === 'refrigerated' ? 'var(--cool)' : 'var(--border)';
 
   return (
-    <div style={{ background: 'var(--surface)', border: `1px solid ${borderColor}`, borderRadius: 14, opacity: pkg.delivered ? 0.7 : 1 }}
-      className="flex items-start gap-3 px-3 py-3">
-      {/* Number */}
-      <div style={{ width: 28, height: 28, borderRadius: '50%', border: `2px solid ${borderColor}`, color: borderColor, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', marginTop: 2 }}>
-        {routeNo}
-      </div>
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontWeight: 600, fontSize: 15 }}
-            className="truncate">{pkg.customerName}</span>
-          {pkg.delivered && <span style={{ fontSize: 11, color: 'var(--delivered)', fontFamily: 'var(--font-sans)' }}>✓配達済</span>}
+    <div style={{ background: 'var(--surface)', border: `1px solid ${borderColor}`, borderRadius: 14, opacity: status === 'delivered' ? 0.72 : 1 }}
+      className="px-3 py-3">
+      <div className="flex items-start gap-3">
+        {/* Number circle */}
+        <div style={{ width: 28, height: 28, borderRadius: '50%', border: `2px solid ${borderColor}`, color: borderColor, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)', marginTop: 2 }}>
+          {status !== 'pending' ? DELIVERY_STATUS_ICONS[status] : routeNo}
         </div>
-        <p style={{ color: 'var(--ink-muted)', fontSize: 12, fontFamily: 'var(--font-sans)' }} className="truncate mt-0.5">{pkg.address}</p>
-        <div className="flex flex-wrap gap-1 mt-1.5">
-          {pkg.nekoposu
-            ? <Chip color="var(--ink)">ネコポス</Chip>
-            : pkg.kogire
-              ? <><Chip color="#6B7280">小物</Chip><Chip>{pkg.size}s</Chip></>
-              : <Chip>{pkg.size}s</Chip>
-          }
-          {pkg.cool !== 'none' && <Chip color={pkg.cool === 'frozen' ? 'var(--frozen)' : 'var(--cool)'}>{COOL_LABELS[pkg.cool]}</Chip>}
-          {pkg.collect && <Chip color="var(--accent)">コレクト{pkg.collectAmount ? ` ¥${pkg.collectAmount.toLocaleString()}` : ''}</Chip>}
-          {pkg.cashOnDelivery && <Chip color="#555">着払い{pkg.cashOnDeliveryAmount ? ` ¥${pkg.cashOnDeliveryAmount.toLocaleString()}` : ''}</Chip>}
-          {pkg.timeSlot && <Chip color={TIME_SLOT_COLORS[pkg.timeSlot]}>{TIME_SLOT_LABELS[pkg.timeSlot]}</Chip>}
-          {!pkg.lat && <Chip color="var(--accent)">📍未取得</Chip>}
-        </div>
-        {pkg.notes && <p style={{ color: 'var(--ink-muted)', fontSize: 11, marginTop: 4 }}>📝 {pkg.notes}</p>}
-      </div>
 
-      <div className="flex flex-col gap-1 flex-shrink-0">
-        <button onClick={onToggle}
-          style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, fontFamily: 'var(--font-sans)', background: pkg.delivered ? 'transparent' : 'rgba(45,106,79,0.1)', color: pkg.delivered ? 'var(--ink-muted)' : 'var(--delivered)', border: `1px solid ${pkg.delivered ? 'var(--border)' : 'var(--delivered)'}` }}>
-          {pkg.delivered ? '戻す' : '✓'}
-        </button>
-        <button onClick={onEdit}
-          style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, fontFamily: 'var(--font-sans)', background: 'transparent', color: 'var(--ink-muted)', border: '1px solid var(--border)' }}>
-          編集
-        </button>
-        <button onClick={onDelete}
-          style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, fontFamily: 'var(--font-sans)', background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
-          削除
-        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontWeight: 600, fontSize: 15, textDecoration: status === 'delivered' ? 'line-through' : 'none' }}
+              className="truncate">{pkg.customerName}</span>
+            {status !== 'pending' && (
+              <span style={{ fontSize: 10, color: statusColor, fontFamily: 'var(--font-sans)', fontWeight: 600, flexShrink: 0 }}>
+                {DELIVERY_STATUS_LABELS[status]}
+              </span>
+            )}
+          </div>
+          <p style={{ color: 'var(--ink-muted)', fontSize: 12, fontFamily: 'var(--font-sans)' }} className="truncate mt-0.5">{pkg.address}</p>
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {pkg.nekoposu
+              ? <Chip color="var(--ink)">ネコポス</Chip>
+              : pkg.kogire
+                ? <><Chip color="#6B7280">小物</Chip><Chip>{pkg.size}s</Chip></>
+                : <Chip>{pkg.size}s</Chip>
+            }
+            {pkg.cool !== 'none' && <Chip color={pkg.cool === 'frozen' ? 'var(--frozen)' : 'var(--cool)'}>{COOL_LABELS[pkg.cool]}</Chip>}
+            {pkg.collect && <Chip color="var(--accent)">コレクト{pkg.collectAmount ? ` ¥${pkg.collectAmount.toLocaleString()}` : ''}</Chip>}
+            {pkg.cashOnDelivery && <Chip color="#555">着払い{pkg.cashOnDeliveryAmount ? ` ¥${pkg.cashOnDeliveryAmount.toLocaleString()}` : ''}</Chip>}
+            {pkg.timeSlot && <Chip color={TIME_SLOT_COLORS[pkg.timeSlot]}>{TIME_SLOT_LABELS[pkg.timeSlot]}</Chip>}
+            {!pkg.lat && <Chip color="var(--accent)">📍未取得</Chip>}
+          </div>
+          {pkg.notes && <p style={{ color: 'var(--ink-muted)', fontSize: 11, marginTop: 4 }}>📝 {pkg.notes}</p>}
+
+          {/* Status selector */}
+          <div className="flex gap-1.5 mt-2 pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+            {STATUS_OPTIONS.map(s => {
+              const active = status === s;
+              const col = DELIVERY_STATUS_COLORS[s];
+              return (
+                <button key={s} type="button"
+                  onClick={() => onStatusChange(active ? 'pending' : s)}
+                  style={{
+                    flex: 1, padding: '5px 0', borderRadius: 8, fontSize: 11, fontFamily: 'var(--font-sans)',
+                    background: active ? col : 'transparent',
+                    color: active ? '#fff' : col,
+                    border: `1.5px solid ${col}`,
+                    fontWeight: active ? 700 : 400,
+                  }}>
+                  {DELIVERY_STATUS_ICONS[s]} {DELIVERY_STATUS_LABELS[s]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1 flex-shrink-0">
+          <button onClick={onEdit}
+            style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, fontFamily: 'var(--font-sans)', background: 'transparent', color: 'var(--ink-muted)', border: '1px solid var(--border)' }}>
+            編集
+          </button>
+          <button onClick={onDelete}
+            style={{ fontSize: 11, padding: '4px 8px', borderRadius: 8, fontFamily: 'var(--font-sans)', background: 'transparent', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
+            削除
+          </button>
+        </div>
       </div>
     </div>
   );

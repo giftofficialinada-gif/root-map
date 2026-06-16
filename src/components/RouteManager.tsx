@@ -1,15 +1,21 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { Package, COOL_LABELS, TimeSlot, TIME_SLOT_LABELS, TIME_SLOT_COLORS, TIME_SLOT_ORDER } from '../types';
+import {
+  Package, COOL_LABELS, TimeSlot, TIME_SLOT_LABELS, TIME_SLOT_COLORS, TIME_SLOT_ORDER,
+  DeliveryStatus, DELIVERY_STATUS_LABELS, DELIVERY_STATUS_COLORS, DELIVERY_STATUS_ICONS,
+  getEffectiveStatus,
+} from '../types';
+
+const CYCLE_ORDER: DeliveryStatus[] = ['pending', 'delivered', 'absent', 'redelivery'];
 
 export default function RouteManager() {
-  const { selectedDate, setSelectedDate, getByDate, movePackage, setDelivered, autoRoutePackages } = useAppStore();
+  const { selectedDate, setSelectedDate, getByDate, movePackage, setDeliveryStatus, autoRoutePackages } = useAppStore();
   const packages = getByDate(selectedDate);
   const [slotFilter, setSlotFilter] = useState<TimeSlot | 'all'>('all');
   const [autoRouting, setAutoRouting] = useState(false);
 
-  const delivered = packages.filter(p => p.delivered).length;
-  const remaining = packages.length - delivered;
+  const delivered = packages.filter(p => getEffectiveStatus(p) === 'delivered').length;
+  const remaining = packages.filter(p => getEffectiveStatus(p) === 'pending').length;
   const pct = packages.length > 0 ? (delivered / packages.length) * 100 : 0;
 
   const visiblePackages = slotFilter === 'all'
@@ -66,7 +72,7 @@ export default function RouteManager() {
               <span style={{ fontSize: 12, color: 'var(--ink-muted)', fontFamily: 'var(--font-sans)' }}>配達進捗</span>
               <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--ink)' }}>
                 <span style={{ color: 'var(--delivered)' }}>{delivered}</span> / {packages.length}件
-                （残り <span style={{ color: 'var(--accent)' }}>{remaining}</span>件）
+                （未配達 <span style={{ color: 'var(--accent)' }}>{remaining}</span>件）
               </span>
             </div>
             <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}>
@@ -105,12 +111,14 @@ export default function RouteManager() {
           </div>
         ) : visiblePackages.map((pkg) => {
           const allIdx = packages.findIndex(p => p.id === pkg.id);
+          const status = getEffectiveStatus(pkg);
+          const nextStatus = CYCLE_ORDER[(CYCLE_ORDER.indexOf(status) + 1) % CYCLE_ORDER.length];
           return (
             <RouteItem key={pkg.id} pkg={pkg} routeNo={allIdx + 1}
               isFirst={allIdx === 0} isLast={allIdx === packages.length - 1}
               onUp={() => movePackage(pkg.id, 'up')}
               onDown={() => movePackage(pkg.id, 'down')}
-              onToggle={() => setDelivered(pkg.id, !pkg.delivered)}
+              onCycle={() => setDeliveryStatus(pkg.id, nextStatus)}
             />
           );
         })}
@@ -154,18 +162,21 @@ export default function RouteManager() {
   );
 }
 
-function RouteItem({ pkg, routeNo, isFirst, isLast, onUp, onDown, onToggle }: {
+function RouteItem({ pkg, routeNo, isFirst, isLast, onUp, onDown, onCycle }: {
   pkg: Package; routeNo: number; isFirst: boolean; isLast: boolean;
-  onUp: () => void; onDown: () => void; onToggle: () => void;
+  onUp: () => void; onDown: () => void; onCycle: () => void;
 }) {
+  const status = getEffectiveStatus(pkg);
+  const statusColor = DELIVERY_STATUS_COLORS[status];
   const slotColor = pkg.timeSlot ? TIME_SLOT_COLORS[pkg.timeSlot] : null;
-  const borderColor = pkg.delivered ? 'var(--delivered)' :
+  const borderColor = status !== 'pending' ? statusColor :
     slotColor ? slotColor :
     pkg.cool === 'frozen' ? 'var(--frozen)' :
     pkg.cool === 'refrigerated' ? 'var(--cool)' : 'var(--border)';
+  const isDone = status !== 'pending';
 
   return (
-    <div style={{ background: 'var(--surface)', border: `1px solid ${borderColor}`, borderRadius: 14, opacity: pkg.delivered ? 0.65 : 1 }}
+    <div style={{ background: 'var(--surface)', border: `1px solid ${borderColor}`, borderRadius: 14, opacity: isDone ? 0.7 : 1 }}
       className="flex items-center gap-2 px-3 py-2.5">
       {/* Up/down */}
       <div className="flex flex-col gap-0.5">
@@ -179,15 +190,20 @@ function RouteItem({ pkg, routeNo, isFirst, isLast, onUp, onDown, onToggle }: {
 
       {/* Number badge */}
       <div style={{ width: 30, height: 30, borderRadius: '50%', border: `2.5px solid ${borderColor}`, color: borderColor, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-mono)' }}>
-        {pkg.collect ? '¥' : routeNo}
+        {status !== 'pending' ? DELIVERY_STATUS_ICONS[status] : (pkg.collect ? '¥' : routeNo)}
       </div>
 
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 14, fontWeight: 600, textDecoration: pkg.delivered ? 'line-through' : 'none', opacity: pkg.delivered ? 0.5 : 1 }}
+          <span style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontSize: 14, fontWeight: 600, textDecoration: status === 'delivered' ? 'line-through' : 'none', opacity: isDone ? 0.6 : 1 }}
             className="truncate">{pkg.customerName}</span>
-          {pkg.timeSlot && (
+          {status !== 'pending' && (
+            <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: statusColor, color: '#fff', fontFamily: 'var(--font-sans)', flexShrink: 0 }}>
+              {DELIVERY_STATUS_LABELS[status]}
+            </span>
+          )}
+          {pkg.timeSlot && status === 'pending' && (
             <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 10, background: TIME_SLOT_COLORS[pkg.timeSlot], color: '#fff', fontFamily: 'var(--font-sans)', flexShrink: 0 }}>
               {TIME_SLOT_LABELS[pkg.timeSlot]}
             </span>
@@ -207,10 +223,17 @@ function RouteItem({ pkg, routeNo, isFirst, isLast, onUp, onDown, onToggle }: {
         </div>
       </div>
 
-      {/* Check button */}
-      <button onClick={onToggle}
-        style={{ width: 36, height: 36, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, border: `2px solid ${pkg.delivered ? 'var(--delivered)' : 'var(--border)'}`, background: pkg.delivered ? 'var(--delivered)' : 'transparent', color: pkg.delivered ? '#fff' : 'var(--border)', transition: 'all 0.2s' }}>
-        ✓
+      {/* Status cycle button: tap to cycle pending→delivered→absent→redelivery→pending */}
+      <button onClick={onCycle}
+        style={{
+          width: 40, height: 40, borderRadius: '50%', flexShrink: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          border: `2px solid ${isDone ? statusColor : 'var(--border)'}`,
+          background: isDone ? statusColor : 'transparent',
+          color: isDone ? '#fff' : 'var(--ink-muted)',
+          transition: 'all 0.2s', gap: 0,
+        }}>
+        <span style={{ fontSize: isDone ? 16 : 14, lineHeight: 1 }}>{isDone ? DELIVERY_STATUS_ICONS[status] : '○'}</span>
       </button>
     </div>
   );

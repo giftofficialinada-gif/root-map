@@ -2,6 +2,7 @@ export type CoolType = 'none' | 'refrigerated' | 'frozen';
 export type PackageSize = 60 | 80 | 100 | 120 | 140 | 160 | 180 | 200;
 export type TabType = 'home' | 'map' | 'packages' | 'route' | 'history';
 export type TimeSlot = 'morning' | '14-16' | '16-18' | '18-20' | '19-21';
+export type DeliveryStatus = 'pending' | 'delivered' | 'absent' | 'redelivery';
 
 export interface Package {
   id: string;
@@ -21,6 +22,7 @@ export interface Package {
   lat?: number;
   lng?: number;
   delivered: boolean;
+  deliveryStatus?: DeliveryStatus;
   routeOrder: number;
   notes?: string;
 }
@@ -56,3 +58,28 @@ export const TIME_SLOT_COLORS: Record<TimeSlot, string> = {
 
 // 時間帯の優先順位（自動ルート組み用）
 export const TIME_SLOT_ORDER: TimeSlot[] = ['morning', '14-16', '16-18', '18-20', '19-21'];
+
+export const DELIVERY_STATUS_LABELS: Record<DeliveryStatus, string> = {
+  pending:    '未配達',
+  delivered:  '配達済',
+  absent:     '不在',
+  redelivery: '再配達',
+};
+
+export const DELIVERY_STATUS_COLORS: Record<DeliveryStatus, string> = {
+  pending:    'var(--ink-muted)',
+  delivered:  'var(--delivered)',
+  absent:     '#E74C3C',
+  redelivery: '#8E44AD',
+};
+
+export const DELIVERY_STATUS_ICONS: Record<DeliveryStatus, string> = {
+  pending:    '',
+  delivered:  '✓',
+  absent:     '✕',
+  redelivery: '↩',
+};
+
+export function getEffectiveStatus(pkg: { delivered: boolean; deliveryStatus?: DeliveryStatus }): DeliveryStatus {
+  return pkg.deliveryStatus ?? (pkg.delivered ? 'delivered' : 'pending');
+}

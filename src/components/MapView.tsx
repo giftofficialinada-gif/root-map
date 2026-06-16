@@ -4,7 +4,11 @@ import L from 'leaflet';
 import { format, parseISO } from 'date-fns';
 import { ja } from 'date-fns/locale';
 import { useAppStore } from '../store/useAppStore';
-import { Package, COOL_LABELS, TIME_SLOT_LABELS, TIME_SLOT_COLORS } from '../types';
+import {
+  Package, COOL_LABELS, TIME_SLOT_LABELS, TIME_SLOT_COLORS,
+  DeliveryStatus, DELIVERY_STATUS_LABELS, DELIVERY_STATUS_COLORS, DELIVERY_STATUS_ICONS,
+  getEffectiveStatus,
+} from '../types';
 
 const DEFAULT_CENTER: [number, number] = [35.6812, 139.7671];
 
@@ -16,7 +20,8 @@ L.Icon.Default.mergeOptions({
 });
 
 function markerColor(pkg: Package) {
-  if (pkg.delivered) return 'var(--delivered)';
+  const status = getEffectiveStatus(pkg);
+  if (status !== 'pending') return DELIVERY_STATUS_COLORS[status];
   if (pkg.timeSlot) return TIME_SLOT_COLORS[pkg.timeSlot];
   if (pkg.cool === 'frozen') return 'var(--frozen)';
   if (pkg.cool === 'refrigerated') return 'var(--cool)';
@@ -25,8 +30,9 @@ function markerColor(pkg: Package) {
 
 function createMarkerIcon(pkg: Package, n: number) {
   const color = markerColor(pkg);
-  const label = pkg.collect ? '¥' : String(n);
-  const filled = pkg.delivered;
+  const status = getEffectiveStatus(pkg);
+  const label = status !== 'pending' ? DELIVERY_STATUS_ICONS[status] : (pkg.collect ? '¥' : String(n));
+  const filled = status !== 'pending';
   return L.divIcon({
     html: `<div style="
       width:32px;height:32px;border-radius:50%;
@@ -152,7 +158,7 @@ function LocationController({ onLocation, onError, triggerRef }: {
 }
 
 export default function MapView() {
-  const { selectedDate, setSelectedDate, getByDate, setDelivered, lastLocation, setLastLocation, autoRoutePackages } = useAppStore();
+  const { selectedDate, setSelectedDate, getByDate, setDeliveryStatus, lastLocation, setLastLocation, autoRoutePackages } = useAppStore();
   const packages = getByDate(selectedDate);
   const [currentPos, setCurrentPos] = useState<[number, number] | null>(lastLocation);
   const [locError, setLocError] = useState(false);
@@ -215,8 +221,8 @@ export default function MapView() {
   const monthDay = format(dateObj, 'M月d日', { locale: ja });
   const dow = format(dateObj, 'EEE', { locale: ja });
 
-  const delivered = packages.filter(p => p.delivered).length;
-  const remaining = packages.length - delivered;
+  const delivered = packages.filter(p => getEffectiveStatus(p) === 'delivered').length;
+  const remaining = packages.filter(p => getEffectiveStatus(p) === 'pending').length;
 
   return (
     <div style={{ background: 'var(--washi)' }} className="flex flex-col">
@@ -292,12 +298,12 @@ export default function MapView() {
               return (
                 <Marker key={pkg.id} position={[pkg.lat!, pkg.lng!]} icon={createMarkerIcon(pkg, routeNo)}>
                   <Popup maxWidth={260}>
-                    <PackagePopup pkg={pkg} routeNo={routeNo} onDelivered={setDelivered} />
+                    <PackagePopup pkg={pkg} routeNo={routeNo} onStatusChange={setDeliveryStatus} />
                   </Popup>
                 </Marker>
               );
             }
-            const allDelivered = cluster.packages.every(p => p.delivered);
+            const allDelivered = cluster.packages.every(p => getEffectiveStatus(p) === 'delivered');
             const clusterColor = allDelivered ? 'var(--delivered)' : 'var(--ink)';
             return (
               <Marker key={`cluster-${ci}`} position={cluster.center} icon={createClusterIcon(cluster.packages.length, clusterColor)}>
@@ -308,7 +314,7 @@ export default function MapView() {
                       const routeNo = positioned.indexOf(pkg) + 1;
                       return (
                         <div key={pkg.id} style={{ borderTop: '1px solid var(--border)', paddingTop: 6, marginTop: 6 }}>
-                          <PackagePopup pkg={pkg} routeNo={routeNo} onDelivered={setDelivered} />
+                          <PackagePopup pkg={pkg} routeNo={routeNo} onStatusChange={setDeliveryStatus} />
                         </div>
                       );
                     })}
@@ -383,15 +389,18 @@ function StatCell({ value, label, accent }: { value: number; label: string; acce
   );
 }
 
-function PackagePopup({ pkg, routeNo, onDelivered }: {
-  pkg: Package; routeNo: number; onDelivered: (id: string, v: boolean) => void;
+const STATUS_OPTIONS: DeliveryStatus[] = ['delivered', 'absent', 'redelivery'];
+
+function PackagePopup({ pkg, routeNo, onStatusChange }: {
+  pkg: Package; routeNo: number; onStatusChange: (id: string, s: DeliveryStatus) => void;
 }) {
   const color = markerColor(pkg);
+  const status = getEffectiveStatus(pkg);
   return (
-    <div style={{ fontFamily: 'var(--font-sans)', minWidth: 200 }}>
+    <div style={{ fontFamily: 'var(--font-sans)', minWidth: 210 }}>
       <div className="flex items-center gap-2 mb-2">
-        <div style={{ width: 24, height: 24, borderRadius: '50%', border: `2px solid ${color}`, color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
-          {routeNo}
+        <div style={{ width: 24, height: 24, borderRadius: '50%', border: `2px solid ${color}`, background: status !== 'pending' ? color : 'transparent', color: status !== 'pending' ? '#fff' : color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700 }}>
+          {status !== 'pending' ? DELIVERY_STATUS_ICONS[status] : routeNo}
         </div>
         <span style={{ fontFamily: 'var(--font-serif)', color: 'var(--ink)', fontWeight: 700 }}>{pkg.customerName}</span>
       </div>
@@ -407,20 +416,33 @@ function PackagePopup({ pkg, routeNo, onDelivered }: {
         {pkg.collect && <Tag accent="var(--accent)">コレクト{pkg.collectAmount ? ` ¥${pkg.collectAmount.toLocaleString()}` : ''}</Tag>}
         {pkg.cashOnDelivery && <Tag accent="#555">着払い{pkg.cashOnDeliveryAmount ? ` ¥${pkg.cashOnDeliveryAmount.toLocaleString()}` : ''}</Tag>}
         {pkg.timeSlot && <Tag accent={TIME_SLOT_COLORS[pkg.timeSlot]}>{TIME_SLOT_LABELS[pkg.timeSlot]}</Tag>}
-        {pkg.delivered && <Tag accent="var(--delivered)">配達済</Tag>}
       </div>
       {pkg.notes && <p style={{ color: 'var(--ink-muted)', fontSize: 11 }} className="mb-2">📝 {pkg.notes}</p>}
-      <button
-        onClick={() => onDelivered(pkg.id, !pkg.delivered)}
-        style={{
-          width: '100%', padding: '6px 0', borderRadius: 8, fontSize: 12, fontWeight: 600,
-          background: pkg.delivered ? 'transparent' : 'var(--delivered)',
-          color: pkg.delivered ? 'var(--ink-muted)' : '#fff',
-          border: pkg.delivered ? '1px solid var(--border)' : 'none',
-          cursor: 'pointer',
-        }}>
-        {pkg.delivered ? '未配達に戻す' : '✓ 配達済にする'}
-      </button>
+      <div style={{ display: 'flex', gap: 4 }}>
+        {STATUS_OPTIONS.map(s => {
+          const active = status === s;
+          const col = DELIVERY_STATUS_COLORS[s];
+          return (
+            <button key={s}
+              onClick={() => onStatusChange(pkg.id, active ? 'pending' : s)}
+              style={{
+                flex: 1, padding: '6px 0', borderRadius: 8, fontSize: 11, fontWeight: active ? 700 : 400,
+                background: active ? col : 'transparent',
+                color: active ? '#fff' : col,
+                border: `1.5px solid ${col}`,
+                cursor: 'pointer',
+              }}>
+              {DELIVERY_STATUS_ICONS[s]} {DELIVERY_STATUS_LABELS[s]}
+            </button>
+          );
+        })}
+      </div>
+      {status !== 'pending' && (
+        <button onClick={() => onStatusChange(pkg.id, 'pending')}
+          style={{ width: '100%', marginTop: 4, padding: '4px 0', borderRadius: 8, fontSize: 10, color: 'var(--ink-muted)', border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer' }}>
+          未配達に戻す
+        </button>
+      )}
     </div>
   );
 }

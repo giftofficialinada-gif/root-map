@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { format } from 'date-fns';
-import { Package, PackageSize, CoolType, TabType, User, TimeSlot, TIME_SLOT_ORDER } from '../types';
+import { Package, PackageSize, CoolType, TabType, User, TimeSlot, TIME_SLOT_ORDER, DeliveryStatus } from '../types';
 import { writeToCloud, isCloudSyncEnabled } from '../lib/sync';
 
 interface AppStore {
@@ -36,6 +36,7 @@ interface AppStore {
   deletePackage: (id: string) => void;
   movePackage: (id: string, direction: 'up' | 'down') => void;
   setDelivered: (id: string, delivered: boolean) => void;
+  setDeliveryStatus: (id: string, status: DeliveryStatus) => void;
   autoRoutePackages: (date: string, startCoords?: [number, number]) => Promise<void>;
 
   // Cloud sync
@@ -190,7 +191,19 @@ export const useAppStore = create<AppStore>()(
 
       setDelivered: (id, delivered) => {
         set((s) => {
-          const packages = s.packages.map((p) => (p.id === id ? { ...p, delivered } : p));
+          const packages = s.packages.map((p) =>
+            p.id === id ? { ...p, delivered, deliveryStatus: (delivered ? 'delivered' : 'pending') as DeliveryStatus } : p
+          );
+          cloudSync({ ...s, packages });
+          return { packages };
+        });
+      },
+
+      setDeliveryStatus: (id, status) => {
+        set((s) => {
+          const packages = s.packages.map((p) =>
+            p.id === id ? { ...p, deliveryStatus: status, delivered: status === 'delivered' } : p
+          );
           cloudSync({ ...s, packages });
           return { packages };
         });
